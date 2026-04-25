@@ -3,9 +3,14 @@ import chalk from "chalk";
 import ora from "ora";
 import path from "path";
 import { scanDirectory } from "./core/scanner.js";
-import { createKnowledgeGraph } from "./core/graph.js";
+import { createKnowledgeGraph, resolveCallGraph } from "./core/graph.js";
 import { parseFile } from "./parsers/index.js";
 import { enrichWithGit } from "./core/git.js";
+import {
+  exportGraphJson,
+  exportReportMarkdown,
+  exportGraphHtml,
+} from "./core/serializer.js";
 
 export const program = new Command();
 
@@ -56,11 +61,24 @@ program
         parseFile(file, graph);
       }
 
+      // Phase 4.5: Call Graph Resolution
+      // Merges unresolved_fn ghost nodes into real defined functions,
+      // eliminating duplicates caused by cross-file call references.
+      spinner.text = chalk.gray("Resolving call graph...");
+      resolveCallGraph(graph);
+
       // Phase 5: Temporal Fact Management (Git History)
       spinner.text = chalk.gray(
         "Extracting Temporal Facts from Git history...",
       );
       await enrichWithGit(graph, targetDir);
+
+      // Phase 6: Caveman Mode & Serialization
+      spinner.text = chalk.gray("Compressing graph into Caveman Mode...");
+      const outDir = path.join(targetDir, ".graphine");
+      exportGraphJson(graph, outDir);
+      exportReportMarkdown(graph, outDir);
+      exportGraphHtml(graph, outDir);
 
       spinner.succeed(
         chalk.green(
