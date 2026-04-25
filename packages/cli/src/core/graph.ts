@@ -1,22 +1,32 @@
 import { MultiDirectedGraph } from "graphology";
 
-// Define strict types for our Knowledge Graph
-export type NodeType = "file" | "media" | "function" | "class" | "variable" | "intent";
+export type NodeType =
+  | "file"
+  | "media"
+  | "function"
+  | "class"
+  | "variable"
+  | "intent";
 export type EdgeType =
   | "imports"
   | "calls"
   | "defines"
   | "superseded_by"
   | "explains";
+export type ConfidenceType = "EXTRACTED" | "INFERRED" | "AMBIGUOUS";
 
 export interface NodeData {
   type: NodeType;
   name: string;
-  metadata?: Record<string, unknown>; // Safe typing, avoids "any"
+  metadata?: Record<string, unknown> & {
+    startLine?: number;
+    endLine?: number;
+  };
 }
 
 export interface EdgeData {
   type: EdgeType;
+  confidence: ConfidenceType;
   metadata?: Record<string, unknown>;
 }
 

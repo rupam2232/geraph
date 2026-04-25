@@ -5,6 +5,7 @@ import path from "path";
 import { scanDirectory } from "./core/scanner.js";
 import { createKnowledgeGraph } from "./core/graph.js";
 import { parseFile } from "./parsers/index.js";
+import { enrichWithGit } from "./core/git.js";
 
 export const program = new Command();
 
@@ -54,6 +55,12 @@ program
       for (const file of files) {
         parseFile(file, graph);
       }
+
+      // Phase 5: Temporal Fact Management (Git History)
+      spinner.text = chalk.gray(
+        "Extracting Temporal Facts from Git history...",
+      );
+      await enrichWithGit(graph, targetDir);
 
       spinner.succeed(
         chalk.green(

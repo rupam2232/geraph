@@ -90,7 +90,10 @@ export function parseTypeScript(
             metadata: { external: true },
           });
         }
-        graph.addEdge(filePath, targetNodeId, { type: "imports" });
+        graph.addEdge(filePath, targetNodeId, {
+          type: "imports",
+          confidence: "EXTRACTED",
+        });
       } else if (name === "class_name") {
         const classId = `${filePath}::class::${node.text}`;
         if (!graph.hasNode(classId)) {
@@ -102,9 +105,16 @@ export function parseTypeScript(
           graph.addNode(classId, {
             type: "class",
             name: node.text,
-            metadata: { doc },
+            metadata: {
+              doc,
+              startLine: node.startPosition.row + 1,
+              endLine: node.endPosition.row + 1,
+            },
           });
-          graph.addEdge(filePath, classId, { type: "defines" });
+          graph.addEdge(filePath, classId, {
+            type: "defines",
+            confidence: "EXTRACTED",
+          });
         }
       } else if (
         name === "func_name" ||
@@ -122,9 +132,16 @@ export function parseTypeScript(
           graph.addNode(funcId, {
             type: "function",
             name: node.text,
-            metadata: { doc },
+            metadata: {
+              doc,
+              startLine: node.startPosition.row + 1,
+              endLine: node.endPosition.row + 1,
+            },
           });
-          graph.addEdge(filePath, funcId, { type: "defines" });
+          graph.addEdge(filePath, funcId, {
+            type: "defines",
+            confidence: "EXTRACTED",
+          });
         }
       } else if (name === "call_name" || name === "call_method_name") {
         const calledName = node.text;
@@ -148,12 +165,18 @@ export function parseTypeScript(
             type: "function",
             name: callerName || "anonymous",
           });
-          graph.addEdge(filePath, callerId, { type: "defines" });
+          graph.addEdge(filePath, callerId, {
+            type: "defines",
+            confidence: "EXTRACTED",
+          });
         }
 
         // Only add edge if it doesn't already exist
         if (!graph.hasEdge(callerId, targetFuncId)) {
-          graph.addEdge(callerId, targetFuncId, { type: "calls" });
+          graph.addEdge(callerId, targetFuncId, {
+            type: "calls",
+            confidence: "EXTRACTED",
+          });
         }
       }
     }
