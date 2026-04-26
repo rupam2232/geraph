@@ -92,12 +92,10 @@ program
 
       console.log(); // Blank line for padding
     } catch (error) {
+      spinner.fail(chalk.red("Failed to scan directory."));
       if (error instanceof Error) {
-        spinner.fail(chalk.red("Failed to scan directory."));
-        console.error(error.message);
-      } else {
-        spinner.fail(chalk.red("Failed to scan directory."));
-        console.error(error);
+        console.error(chalk.red(`Error: ${error.message}`));
       }
+      process.exit(1);
     }
   });

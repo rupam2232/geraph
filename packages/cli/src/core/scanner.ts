@@ -23,13 +23,13 @@ export async function scanDirectory(targetDir: string): Promise<string[]> {
   const ig: Ignore = createIgnore();
 
   // Load .gitignore if it exists
-  const gitignorePath = path.join(targetDir, ".gitignore");
+  const gitignorePath = path.resolve(targetDir, ".gitignore");
   if (fs.existsSync(gitignorePath)) {
     ig.add(fs.readFileSync(gitignorePath, "utf8"));
   }
 
   // Load .graphineignore if it exists
-  const graphineignorePath = path.join(targetDir, ".graphineignore");
+  const graphineignorePath = path.resolve(targetDir, ".graphineignore");
   if (fs.existsSync(graphineignorePath)) {
     ig.add(fs.readFileSync(graphineignorePath, "utf8"));
   }
@@ -40,16 +40,19 @@ export async function scanDirectory(targetDir: string): Promise<string[]> {
   // We need to look for files recursively
   const globPatterns = SUPPORTED_EXTENSIONS.map((ext) => `**/*.${ext}`);
 
-  // Perform the glob search
+  // Perform the glob search.
+  // Note: fast-glob REQUIRES forward slashes even on Windows.
+  const normalizedCwd = targetDir.split(path.sep).join("/");
+
   const allFiles = await fg(globPatterns, {
-    cwd: targetDir,
+    cwd: normalizedCwd,
     dot: true,
-    absolute: false, // Return relative paths so `ignore` can filter them easily
+    absolute: false,
   });
 
   // Filter out the files using the `ignore` instance
   const validRelativeFiles = ig.filter(allFiles);
 
-  // Convert back to absolute paths
-  return validRelativeFiles.map((file) => path.join(targetDir, file));
+  // Convert back to absolute paths using system separators
+  return validRelativeFiles.map((file) => path.resolve(targetDir, file));
 }

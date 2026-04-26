@@ -3,6 +3,7 @@ import tsLanguage from "tree-sitter-typescript";
 import jsLanguage from "tree-sitter-javascript";
 import fs from "fs";
 import path from "path";
+import chalk from "chalk";
 import { builtinModules } from "module";
 import type { MultiDirectedGraph } from "graphology";
 import type { NodeData, EdgeData } from "../core/graph.js";
@@ -305,23 +306,49 @@ export function parseTypeScript(
   const isTs = filePath.endsWith(".ts") || filePath.endsWith(".tsx");
   const isTsx = filePath.endsWith(".tsx");
 
+  const language = isTs
+    ? isTsx
+      ? tsLanguage.tsx
+      : tsLanguage.typescript
+    : jsLanguage;
+
   const parser = new Parser();
-
-  let language;
-  if (isTs) {
-    language = isTsx ? tsLanguage.tsx : tsLanguage.typescript;
-  } else {
-    language = jsLanguage;
-  }
-
   parser.setLanguage(language);
 
-  const sourceCode = fs.readFileSync(filePath, "utf8");
-  const tree = parser.parse(sourceCode);
+  let sourceCode: string;
+  try {
+    const buffer = fs.readFileSync(filePath);
+    sourceCode = buffer.toString("utf8").replace(/\0/g, "");
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error(chalk.red(`⚠️ Error reading ${filePath}: ${error.message}`));
+    }
+    return;
+  }
 
-  // Advanced AST Query to capture Imports, Classes, Functions, and Call Expressions.
-  // For member expression calls (obj.method()), we capture both the object and property
-  // so we can filter out calls on Node.js built-in modules (fs, path, os, etc.)
+  let tree: Parser.Tree;
+  try {
+    // Use the callback API to feed chunks to the native engine.
+    // This is more robust on Windows than passing one giant string.
+    tree = parser.parse((index: number) => {
+      if (index >= sourceCode.length) return null;
+      return sourceCode.substring(index, index + 10240); // 10KB chunks
+    });
+  } catch {
+    try {
+      // Fallback: Strip non-ASCII characters and try again
+      // eslint-disable-next-line no-control-regex
+      const asciiOnly = sourceCode.replace(/[^\x00-\x7F]/g, " ");
+      tree = parser.parse((index: number) => {
+        if (index >= asciiOnly.length) return null;
+        return asciiOnly.substring(index, index + 10240);
+      });
+    } catch {
+      console.error(chalk.red(`⚠️ Warning: Could not parse ${filePath}. Skipping...`));
+      return;
+    }
+  }
+
   const baseQueryString = `
     (import_statement source: (string) @import_source)
     (call_expression
@@ -330,8 +357,17 @@ export function parseTypeScript(
       (#eq? @req_fn "require")
     )
     (class_declaration name: (_) @class_name)
-    (function_declaration name: (_) @func_name)
-    (method_definition name: (_) @method_name)
+
+    ; Capture all named function definitions (declaration, method, or variable-assigned)
+    [
+      (function_declaration name: (_) @func_name)
+      (method_definition name: (_) @method_name)
+      (variable_declarator 
+        name: (identifier) @var_func_name 
+        value: [(arrow_function) (function_expression)]
+      )
+    ]
+
     (call_expression function: (identifier) @call_name)
     (call_expression
       function: (member_expression
@@ -462,7 +498,6 @@ export function parseTypeScript(
         const funcId = `${filePath}::function::${node.text}`;
         if (!graph.hasNode(funcId)) {
           let doc = "";
-          // node is the name identifier; parent is the function/method declaration
           const declNode =
             name === "var_func_name" ? node.parent?.parent : node.parent;
           if (declNode?.previousSibling?.type === "comment") {
@@ -473,7 +508,6 @@ export function parseTypeScript(
             name: node.text,
             metadata: {
               doc,
-              // Use the full declaration range for accurate line spans
               startLine: declNode
                 ? declNode.startPosition.row + 1
                 : node.startPosition.row + 1,
