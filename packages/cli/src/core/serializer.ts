@@ -120,7 +120,12 @@ export function exportGraphHtml(
     fs.mkdirSync(outDir, { recursive: true });
   }
 
-  const counts: Record<string, number> = { file: 0, class: 0, function: 0, intent: 0 };
+  const counts: Record<string, number> = {
+    file: 0,
+    class: 0,
+    function: 0,
+    intent: 0,
+  };
 
   const RAW_NODES = graph.nodes().map((n) => {
     const data = graph.getNodeAttributes(n);
@@ -188,7 +193,7 @@ export function exportGraphHtml(
   #search:focus { border-color: #4E79A7; }
   #info-panel { padding: 14px; border-bottom: 1px solid #2a2a4e; min-height: 200px; flex: 1; overflow-y: auto; }
   #info-panel h3 { font-size: 13px; color: #aaa; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
-  #info-content { font-size: 13px; color: #ccc; line-height: 1.6; word-break: break-all; }
+  #info-content { font-size: 13px; color: #ccc; line-height: 1.6; word-break: break-word; }
   #info-content .field { margin-bottom: 8px; }
   #info-content .field b { color: #e0e0e0; display: block; font-size: 11px; text-transform: uppercase; margin-bottom: 2px; }
   #info-content .empty { color: #555; font-style: italic; }
@@ -241,72 +246,80 @@ export function exportGraphHtml(
   
   const network = new vis.Network(container, data, options);
 
-  // Search Functionality
+  // ── Shared helper: populate the info panel for a given node ID ────────────
+  function showNodeInfo(nodeId) {
+    const infoContent = document.getElementById('info-content');
+    const nodeData = RAW_NODES.find(n => n.id === nodeId);
+    if (!nodeData) {
+      infoContent.innerHTML = '<span class="empty">Node not found</span>';
+      return;
+    }
+
+    let html = \`<div class="field"><b>ID</b> \${nodeData.id}</div>\`;
+    html += \`<div class="field"><b>Type</b> \${nodeData.node_type}</div>\`;
+    html += \`<div class="field"><b>Name</b> \${nodeData.label}</div>\`;
+
+    // Source file (for defined nodes; skip ghost import/unresolved nodes)
+    if (nodeData.source_file && nodeData.source_file !== 'unresolved_fn' && nodeData.source_file !== 'import') {
+      html += \`<div class="field"><b>Source</b> \${nodeData.source_file}</div>\`;
+    }
+
+    // For external import ghost nodes, show which file imported them and from which line
+    if (nodeData.id && nodeData.id.startsWith && nodeData.id.startsWith('import::') && nodeData.callerFile) {
+      html += \`<div class="field"><b>Imported in</b> \${nodeData.callerFile}\${nodeData.callerLine ? ':' + nodeData.callerLine : ''}</div>\`;
+    }
+
+    // Lines: show "16" instead of "16 - 16" when single-line
+    if (nodeData.startLine) {
+      const lineText = nodeData.startLine === nodeData.endLine
+        ? \`\${nodeData.startLine}\`
+        : \`\${nodeData.startLine} \u2013 \${nodeData.endLine}\`;
+      html += \`<div class="field"><b>Lines</b> \${lineText}</div>\`;
+    }
+
+    // Git commit message — render newlines as <br> for readability
+    if (nodeData.message) {
+      html += \`<div class="field"><b>Message</b> \${nodeData.message.replace(/\\n/g, '<br>')}</div>\`;
+    }
+
+    // Unresolved function: show why and where it was called from
+    if (nodeData.unresolved) {
+      html += \`<div class="field"><b>Status</b> <span style="color:#f59e0b">Unresolved</span></div>\`;
+      if (nodeData.reason) {
+        html += \`<div class="field"><b>Reason</b> \${nodeData.reason}</div>\`;
+      }
+      if (nodeData.callerFile) {
+        html += \`<div class="field"><b>First called from</b> \${nodeData.callerFile}\${nodeData.callerLine ? ':' + nodeData.callerLine : ''}</div>\`;
+      }
+    }
+
+    infoContent.innerHTML = html;
+  }
+
+  // ── Search: select all matches, focus + show info for first result ─────────
   document.getElementById('search').addEventListener('input', function(e) {
     const val = e.target.value.toLowerCase();
     if (!val) {
       network.selectNodes([]);
+      document.getElementById('info-content').innerHTML = '<span class="empty">Click a node to inspect it</span>';
       return;
     }
     const matched = RAW_NODES.filter(n => n.label.toLowerCase().includes(val)).map(n => n.id);
     if (matched.length > 0) {
       network.selectNodes(matched);
-      network.focus(matched[0], { scale: 1.2, animation: true });
+      network.focus(matched[0], { scale: 1, animation: { duration: 1000, easingFunction: 'easeInOutQuad' }});
+      showNodeInfo(matched[0]);
     }
   });
 
-  // Node Click Info Panel
+  // ── Click: focus + show info for clicked node ──────────────────────────────
   network.on("click", function (params) {
-    const infoContent = document.getElementById('info-content');
     if (params.nodes.length > 0) {
       const nodeId = params.nodes[0];
-      
-      // Zoom and focus on the clicked node
-      network.focus(nodeId, { scale: 1.5, animation: { duration: 1000, easingFunction: 'easeInOutQuad' } });
-      
-      const nodeData = RAW_NODES.find(n => n.id === nodeId);
-      
-      let html = \`<div class="field"><b>ID</b> \${nodeData.id}</div>\`;
-      html += \`<div class="field"><b>Type</b> \${nodeData.node_type}</div>\`;
-      html += \`<div class="field"><b>Name</b> \${nodeData.label}</div>\`;
-      
-      // Source file (for defined nodes; skip ghost import/unresolved nodes)
-      if (nodeData.source_file && nodeData.source_file !== 'unresolved_fn' && nodeData.source_file !== 'import') {
-        html += \`<div class="field"><b>Source</b> \${nodeData.source_file}</div>\`;
-      }
-
-      // For external import ghost nodes, show which file imported them and from which line
-      if (nodeData.id && nodeData.id.startsWith && nodeData.id.startsWith('import::') && nodeData.callerFile) {
-        html += \`<div class="field"><b>Imported in</b> \${nodeData.callerFile}\${nodeData.callerLine ? ':' + nodeData.callerLine : ''}</div>\`;
-      }
-
-      // Lines: show "16" instead of "16 - 16" when single-line
-      if (nodeData.startLine) {
-        const lineText = nodeData.startLine === nodeData.endLine
-          ? \`\${nodeData.startLine}\`
-          : \`\${nodeData.startLine} – \${nodeData.endLine}\`;
-        html += \`<div class="field"><b>Lines</b> \${lineText}</div>\`;
-      }
-
-      // Git commit message
-      if (nodeData.message) {
-        html += \`<div class="field"><b>Message</b> \${nodeData.message.replace(/\\n/g, '<br>')}</div>\`;
-      }
-
-      // Unresolved function: show why and where it was called from
-      if (nodeData.unresolved) {
-        html += \`<div class="field"><b>Status</b> <span style="color:#f59e0b">Unresolved</span></div>\`;
-        if (nodeData.reason) {
-          html += \`<div class="field"><b>Reason</b> \${nodeData.reason}</div>\`;
-        }
-        if (nodeData.callerFile) {
-          html += \`<div class="field"><b>First called from</b> \${nodeData.callerFile}\${nodeData.callerLine ? ':' + nodeData.callerLine : ''}</div>\`;
-        }
-      }
-      
-      infoContent.innerHTML = html;
+      network.focus(nodeId, { scale: 1, animation: { duration: 1000, easingFunction: 'easeInOutQuad' } });
+      showNodeInfo(nodeId);
     } else {
-      infoContent.innerHTML = '<span class="empty">Click a node to inspect it</span>';
+      document.getElementById('info-content').innerHTML = '<span class="empty">Click a node to inspect it</span>';
     }
   });
 </script>
