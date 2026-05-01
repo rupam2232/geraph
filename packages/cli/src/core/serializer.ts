@@ -125,6 +125,9 @@ export function exportGraphHtml(
     class: 0,
     function: 0,
     intent: 0,
+    type: 0,
+    interface: 0,
+    enum: 0,
   };
 
   // Calculate node degrees for sizing and label logic
@@ -147,7 +150,9 @@ export function exportGraphHtml(
     function: "#ee272bff",
     intent: "#35d86eff",
     media: "#9C755F",
-    variable: "#d835d8ff",
+    type: "#B07AA1",
+    interface: "#B07AA1",
+    enum: "#59A14F",
   };
 
   const RAW_NODES = graph.nodes().map((n) => {
@@ -257,12 +262,13 @@ export function exportGraphHtml(
     .field b { color: #888; display: block; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 2px; }
     .empty { color: #555; font-style: italic; }
     
-    #legend { padding: 20px; border-top: 1px solid rgba(255,255,255,0.1); display: flex; flex-direction: column; gap: 0.3rem; }
+    #legend { padding: 20px; border-top: 1px solid rgba(255,255,255,0.1); display: flex; flex-direction: column; gap: 0.3rem; max-height: 100px; overflow-y: auto; scrollbar-color: rgba(255,255,255,0.1) transparent; scrollbar-width: thin }
     .legend-item { display: flex; align-items: center; justify-content: space-between; font-size: 0.8rem; }
     .legend-item-left { display: flex; align-items: center; }
     .legend-dot { width: 10px; height: 10px; border-radius: 50%; margin-right: 10px; }
     .legend-count { color: #666; font-weight: 600; }
     #stats { padding: 10px 14px; border-top: 1px solid rgba(255,255,255,0.1); font-size: 11px; color: #666; background: rgba(26, 26, 46, 0.9); border-radius: 0 0 12px 12px; }
+    .hidden { display: none !important; }
   </style>
 </head>
 <body>
@@ -281,10 +287,12 @@ export function exportGraphHtml(
       </div>
     </div>
     <div id="legend">
-      <div class="legend-item"><div class="legend-item-left"><div class="legend-dot" style="background: ${COLORS.file};"></div> File</div><span class="legend-count">${counts.file || 0}</span></div>
-      <div class="legend-item"><div class="legend-item-left"><div class="legend-dot" style="background: ${COLORS.class};"></div> Class</div><span class="legend-count">${counts.class || 0}</span></div>
-      <div class="legend-item"><div class="legend-item-left"><div class="legend-dot" style="background: ${COLORS.function};"></div> Function</div><span class="legend-count">${counts.function || 0}</span></div>
-      <div class="legend-item"><div class="legend-item-left"><div class="legend-dot" style="background: ${COLORS.intent};"></div> Intent</div><span class="legend-count">${counts.intent || 0}</span></div>
+      <div class="legend-item ${counts.file ? "" : "hidden"}"><div class="legend-item-left"><div class="legend-dot" style="background: ${COLORS.file};"></div> File</div><span class="legend-count">${counts.file || 0}</span></div>
+      <div class="legend-item ${counts.class ? "" : "hidden"}"><div class="legend-item-left"><div class="legend-dot" style="background: ${COLORS.class};"></div> Class</div><span class="legend-count">${counts.class || 0}</span></div>
+      <div class="legend-item ${counts.function ? "" : "hidden"}"><div class="legend-item-left"><div class="legend-dot" style="background: ${COLORS.function};"></div> Function</div><span class="legend-count">${counts.function || 0}</span></div>
+      <div class="legend-item ${counts.type || counts.interface ? "" : "hidden"}"><div class="legend-item-left"><div class="legend-dot" style="background: ${COLORS.type};"></div> Type/Interface</div><span class="legend-count">${(counts.type || 0) + (counts.interface || 0)}</span></div>
+      <div class="legend-item ${counts.enum ? "" : "hidden"}"><div class="legend-item-left"><div class="legend-dot" style="background: ${COLORS.enum};"></div> Enum</div><span class="legend-count">${counts.enum || 0}</span></div>
+      <div class="legend-item ${counts.intent ? "" : "hidden"}"><div class="legend-item-left"><div class="legend-dot" style="background: ${COLORS.intent};"></div> Intent</div><span class="legend-count">${counts.intent || 0}</span></div>
     </div>
     <div id="stats">${RAW_NODES.length} nodes &middot; ${RAW_EDGES.length} edges</div>
   </div>

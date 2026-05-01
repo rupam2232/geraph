@@ -5,8 +5,10 @@ export type NodeType =
   | "media"
   | "function"
   | "class"
-  | "variable"
-  | "intent";
+  | "intent"
+  | "type"
+  | "interface"
+  | "enum";
 export type EdgeType =
   | "imports"
   | "calls"
@@ -53,15 +55,14 @@ export function createKnowledgeGraph(): MultiDirectedGraph<NodeData, EdgeData> {
 export function resolveCallGraph(
   graph: MultiDirectedGraph<NodeData, EdgeData>,
 ): void {
-  // Build a lookup map: function name -> real node ID (prefer first match)
-  const realFunctions = new Map<string, string>();
+  // Build a lookup map: name -> real node ID (prefer first match)
+  const realDefs = new Map<string, string>();
   for (const nodeId of graph.nodes()) {
     const data = graph.getNodeAttributes(nodeId);
-    if (!nodeId.startsWith("unresolved_fn::") && data.type === "function") {
-      // The name is the last segment after ::function::
-      const fnName = data.name;
-      if (!realFunctions.has(fnName)) {
-        realFunctions.set(fnName, nodeId);
+    if (!nodeId.startsWith("unresolved_fn::") && (data.type === "function" || data.type === "class")) {
+      const name = data.name;
+      if (!realDefs.has(name)) {
+        realDefs.set(name, nodeId);
       }
     }
   }
@@ -70,7 +71,7 @@ export function resolveCallGraph(
   const ghosts = graph.nodes().filter((n) => n.startsWith("unresolved_fn::"));
   for (const ghostId of ghosts) {
     const ghostData = graph.getNodeAttributes(ghostId);
-    const realId = realFunctions.get(ghostData.name);
+    const realId = realDefs.get(ghostData.name);
 
     if (realId) {
       // Rewire all incoming edges (callers → ghost) to (callers → real)

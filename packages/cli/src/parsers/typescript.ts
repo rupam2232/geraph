@@ -270,7 +270,6 @@ const BUILT_INS = new Set([
 function resolveImportToNode(
   importPath: string,
   sourceFilePath: string,
-  graph: MultiDirectedGraph<NodeData, EdgeData>,
 ): string | null {
   // Only resolve relative imports — package imports are always external
   if (!importPath.startsWith(".")) return null;
@@ -293,7 +292,9 @@ function resolveImportToNode(
   ];
 
   for (const candidate of candidates) {
-    if (graph.hasNode(candidate)) return candidate;
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
   }
 
   return null;
@@ -372,6 +373,13 @@ export function parseTypeScript(
     ; Capture class names (abstract only in TS)
     ${isTs ? "[(class_declaration) (abstract_class_declaration)] @class_decl" : "(class_declaration) @class_decl"}
     
+    ${isTs ? `
+    ; Capture TS specific types
+    (interface_declaration name: (type_identifier) @interface_name)
+    (type_alias_declaration name: (type_identifier) @type_name)
+    (enum_declaration name: (identifier) @enum_name)
+    ` : ""}
+    
     ; Capture all named function definitions
     [
       (function_declaration name: (_) @func_name)
@@ -380,7 +388,6 @@ export function parseTypeScript(
         name: (identifier) @var_func_name 
         value: [(arrow_function) (function_expression)]
       )
-      ; Common pattern: export const name = ...
       (lexical_declaration
         (variable_declarator
           name: (identifier) @lex_func_name
@@ -396,6 +403,9 @@ export function parseTypeScript(
         property: (property_identifier) @call_method_name
       )
     )
+    
+    ; Capture object instantiations
+    (new_expression constructor: (_) @constructor_name)
   `;
 
   const query = new Query(language, baseQueryString);
@@ -454,12 +464,20 @@ export function parseTypeScript(
 
         if (isNativeModule) continue;
 
-        // Try to resolve the import to a real file node already in the graph.
+        // Try to resolve the import to a real file node using the file system.
         // This handles the .js → .ts extension mismatch TypeScript uses.
-        const resolvedId = resolveImportToNode(importPath, filePath, graph);
+        const resolvedId = resolveImportToNode(importPath, filePath);
 
         if (resolvedId) {
-          // Wire directly to the real file node — no ghost import needed
+          // The localGraph is isolated per file. We must add a stub node for the target
+          // so graphology doesn't throw "target node not found". The parent process 
+          // merges this stub with the real file node later.
+          if (!graph.hasNode(resolvedId)) {
+            graph.addNode(resolvedId, {
+              type: "file",
+              name: path.basename(resolvedId),
+            });
+          }
           graph.addEdge(filePath, resolvedId, {
             type: "imports",
             confidence: "EXTRACTED",
@@ -558,6 +576,30 @@ export function parseTypeScript(
             confidence: "EXTRACTED",
           });
         }
+      } else if (name === "type_name" || name === "interface_name" || name === "enum_name") {
+        const typeName = node.text;
+        const nodeType = name === "enum_name" ? "enum" : (name === "interface_name" ? "interface" : "type");
+        const typeId = `${filePath}::${nodeType}::${typeName}`;
+        if (!graph.hasNode(typeId)) {
+          let doc = "";
+          const declNode = node.parent;
+          if (declNode?.previousSibling?.type === "comment") {
+            doc = declNode.previousSibling.text;
+          }
+          graph.addNode(typeId, {
+            type: nodeType,
+            name: typeName,
+            metadata: {
+              doc,
+              startLine: declNode ? declNode.startPosition.row + 1 : node.startPosition.row + 1,
+              endLine: declNode ? declNode.endPosition.row + 1 : node.endPosition.row + 1,
+            },
+          });
+          graph.addEdge(filePath, typeId, {
+            type: "defines",
+            confidence: "EXTRACTED",
+          });
+        }
       } else if (name === "call_method_name") {
         const calledName = node.text;
 
@@ -615,8 +657,9 @@ export function parseTypeScript(
             confidence: "AMBIGUOUS",
           });
         }
-      } else if (name === "call_name") {
+      } else if (name === "call_name" || name === "constructor_name") {
         // Bare function calls: scanDirectory(), parseFile(), require(), etc.
+        // OR object instantiations: new ClassName()
         const calledName = node.text;
 
         // Skip ECMAScript / Node.js built-ins
@@ -631,13 +674,13 @@ export function parseTypeScript(
         const targetFuncId = `unresolved_fn::${calledName}`;
         if (!graph.hasNode(targetFuncId)) {
           graph.addNode(targetFuncId, {
-            type: "function",
+            type: name === "constructor_name" ? "class" : "function",
             name: calledName,
             metadata: {
               external: true,
               unresolved: true,
               reason:
-                "Called but not defined in any scanned file. Likely from an external package or a dynamic import.",
+                "Called/Instantiated but not defined in any scanned file. Likely from an external package or a dynamic import.",
               callerFile: filePath,
               callerLine: callLine,
             },
@@ -665,3 +708,4 @@ export function parseTypeScript(
     }
   }
 }
+
