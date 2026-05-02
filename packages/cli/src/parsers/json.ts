@@ -9,11 +9,16 @@ export function parseJson(
 ) {
   const content = fs.readFileSync(filePath, 'utf8');
   let keyCount = 0;
+  const fileName = path.basename(filePath);
+  let deps: Record<string, string> = {};
   
   try {
     const data = JSON.parse(content);
     if (typeof data === 'object' && data !== null) {
       keyCount = Object.keys(data).length;
+      if (fileName === 'package.json') {
+        deps = { ...(data.dependencies || {}), ...(data.devDependencies || {}) };
+      }
     }
   } catch {
     // ignore parse errors
@@ -22,11 +27,27 @@ export function parseJson(
   if (!graph.hasNode(filePath)) {
     graph.addNode(filePath, {
       type: 'file',
-      name: path.basename(filePath),
+      name: fileName,
       metadata: {
         extension: '.json',
         keyCount
       }
+    });
+  }
+
+  // Draw edges to external dependencies
+  for (const dep of Object.keys(deps)) {
+    const depNodeId = `import::${dep}`;
+    if (!graph.hasNode(depNodeId)) {
+      graph.addNode(depNodeId, {
+        type: 'file',
+        name: dep,
+        metadata: { external: true, extension: '.json' },
+      });
+    }
+    graph.addEdge(filePath, depNodeId, {
+      type: 'imports',
+      confidence: 'EXTRACTED'
     });
   }
 }

@@ -21,4 +21,48 @@ export function parseMarkdown(
       }
     });
   }
+
+  // Extract references to codebase files
+  const fileRefs = new Set<string>();
+  
+  // Match Markdown links: [Code](./src/core.ts)
+  const linkRegex = /\[.*?\]\(([^)]+)\)/g;
+  let match;
+  while ((match = linkRegex.exec(content)) !== null) {
+    if (match[1]) fileRefs.add(match[1]);
+  }
+  
+  // Match inline code blocks with paths: `packages/cli/src/core.ts`
+  const codeRegex = /`([^`]+)`/g;
+  while ((match = codeRegex.exec(content)) !== null) {
+    if (match[1] && match[1].includes('.') && !match[1].includes(' ')) {
+       fileRefs.add(match[1]);
+    }
+  }
+
+  const dir = path.dirname(filePath);
+  
+  for (const ref of fileRefs) {
+    let resolvedPath = "";
+    if (ref.startsWith('./') || ref.startsWith('../')) {
+       resolvedPath = path.resolve(dir, ref);
+    } else {
+       resolvedPath = path.resolve(process.cwd(), ref);
+    }
+    
+    if (fs.existsSync(resolvedPath) && fs.statSync(resolvedPath).isFile()) {
+       if (!graph.hasNode(resolvedPath)) {
+         graph.addNode(resolvedPath, {
+           type: 'file',
+           name: path.basename(resolvedPath),
+           metadata: { extension: path.extname(resolvedPath) }
+         });
+       }
+       
+       graph.addEdge(filePath, resolvedPath, {
+         type: 'explains',
+         confidence: 'EXTRACTED'
+       });
+    }
+  }
 }
