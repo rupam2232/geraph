@@ -5,7 +5,6 @@ import type { MultiDirectedGraph } from "graphology";
 import type { NodeData, EdgeData } from "./graph.js";
 import chalk from "chalk";
 
-const COMMIT_LIMIT = 100;
 const CACHE_VERSION = "1";
 
 const GIT_ENRICH_SKIP = new Set([
@@ -27,7 +26,7 @@ const GIT_ENRICH_SKIP = new Set([
 
 interface GitCacheBlameEntry {
   mtime: number;
-  lineToCommit: Record<string, string>;
+  nodeToCommits: Record<string, string[]>;
 }
 
 interface CommitMetadata {
@@ -38,9 +37,7 @@ interface CommitMetadata {
 
 interface GitCache {
   version: string;
-  head: string;
   commits: Record<string, CommitMetadata>;
-  fileCommits: Record<string, string[]>;
   blame: Record<string, GitCacheBlameEntry>;
 }
 
@@ -68,8 +65,6 @@ export async function enrichWithGit(
   targetDir: string,
 ) {
   let git: SimpleGit;
-  let repoRoot: string;
-  let currentHead: string;
 
   try {
     git = simpleGit(targetDir);
@@ -82,9 +77,6 @@ export async function enrichWithGit(
       console.warn(chalk.yellow("\n\u26A0\u3000Shallow Git repository detected. Skipping Git enrichment to save time."));
       return;
     }
-
-    repoRoot = (await git.raw(["rev-parse", "--show-toplevel"])).trim();
-    currentHead = (await git.raw(["rev-parse", "HEAD"])).trim();
   } catch {
     return;
   }
@@ -95,9 +87,7 @@ export async function enrichWithGit(
 
   const cache: GitCache = loadCache(cacheFile) ?? {
     version: CACHE_VERSION,
-    head: "",
     commits: {},
-    fileCommits: {},
     blame: {},
   };
 
@@ -117,92 +107,63 @@ export async function enrichWithGit(
     return meta;
   }
 
+  const pendingCommits = new Map<string, Promise<CommitMetadata>>();
+
   async function ensureCommitNode(hash: string): Promise<string> {
     const intentNodeId = `commit::${hash}`;
-    if (!graph.hasNode(intentNodeId)) {
-      const meta = await getCommitMetadata(hash);
-      graph.addNode(intentNodeId, {
-        type: "intent",
-        name: `Commit ${hash.substring(0, 7)}`,
-        metadata: { 
-          message: meta.message,
-          author: meta.author,
-          date: meta.date
-        },
-      });
+    if (graph.hasNode(intentNodeId)) return intentNodeId;
+
+    if (!pendingCommits.has(hash)) {
+      pendingCommits.set(hash, getCommitMetadata(hash));
     }
+    
+    try {
+      const meta = await pendingCommits.get(hash)!;
+      // Double check in case another concurrent call added it while we awaited
+      if (!graph.hasNode(intentNodeId)) {
+        graph.addNode(intentNodeId, {
+          type: "intent",
+          name: `Commit ${hash.substring(0, 7)}`,
+          metadata: { 
+            message: meta.message,
+            author: meta.author,
+            date: meta.date
+          },
+        });
+      }
+    } catch {
+      // If fetching metadata fails, just silently skip to prevent throwing the whole file's loop
+    }
+    
     return intentNodeId;
   }
 
-  const fileNodeLookup = new Map<string, string>();
+
+  const nodesByFile = new Map<string, string[]>();
+
+  // Group functions, classes, etc. by their file path
+  for (const nodeId of graph.nodes()) {
+    const data = graph.getNodeAttributes(nodeId);
+    if (data.metadata?.external) continue;
+    
+    if (["function", "class", "type", "interface", "enum"].includes(data.type)) {
+      const filePath = nodeId.split("::")[0];
+      if (!filePath) continue;
+      if (!nodesByFile.has(filePath)) nodesByFile.set(filePath, []);
+      nodesByFile.get(filePath)!.push(nodeId);
+    }
+  }
+
+  // If a file has NO functions/classes, map commits to the file node itself
   for (const nodeId of graph.nodes()) {
     const data = graph.getNodeAttributes(nodeId);
     if (data.type === "file" && !data.metadata?.external) {
       const basename = path.basename(nodeId);
       if (GIT_ENRICH_SKIP.has(basename)) continue;
-      fileNodeLookup.set(path.normalize(nodeId), nodeId);
-    }
-  }
-
-  // ── Pass 1: git log ───────────────────────────────────────────────────────
-  const headChanged = cache.head !== currentHead;
-  if (headChanged) {
-    const logOut = await git.raw([
-      "log",
-      `--max-count=${COMMIT_LIMIT}`,
-      "--name-only",
-      "--format=COMMIT:%H",
-      "HEAD",
-    ]);
-
-    let currentHash: string | null = null;
-    for (const rawLine of logOut.split("\n")) {
-      const line = rawLine.trim();
-      if (!line) continue;
-      if (line.startsWith("COMMIT:")) {
-        currentHash = line.slice("COMMIT:".length);
-        continue;
-      }
-      if (!currentHash) continue;
-
-      const absolutePath = path.normalize(path.join(repoRoot, line));
-      if (!cache.fileCommits[absolutePath]) cache.fileCommits[absolutePath] = [];
-      if (!cache.fileCommits[absolutePath]!.includes(currentHash)) {
-        cache.fileCommits[absolutePath]!.push(currentHash);
+      if (!nodesByFile.has(nodeId)) {
+        nodesByFile.set(nodeId, [nodeId]);
       }
     }
-    cache.head = currentHead;
-  }
-
-  for (const [absolutePath, hashes] of Object.entries(cache.fileCommits)) {
-    const fileNodeId = fileNodeLookup.get(absolutePath);
-    if (!fileNodeId) continue;
-    for (const hash of hashes) {
-      const intentNodeId = await ensureCommitNode(hash);
-      if (!graph.hasEdge(intentNodeId, fileNodeId)) {
-        graph.addEdge(intentNodeId, fileNodeId, {
-          type: "explains",
-          confidence: "EXTRACTED",
-        });
-      }
-    }
-  }
-
-  // ── Pass 2: git blame (parallel optimized) ───────────────────────────────
-  const funcClassNodes = graph.nodes().filter((id) => {
-    const data = graph.getNodeAttributes(id);
-    return (
-      ["function", "class", "type", "interface", "enum"].includes(data.type) &&
-      !data.metadata?.external
-    );
-  });
-
-  const nodesByFile = new Map<string, string[]>();
-  for (const nodeId of funcClassNodes) {
-    const filePath = nodeId.split("::")[0];
-    if (!filePath) continue;
-    if (!nodesByFile.has(filePath)) nodesByFile.set(filePath, []);
-    nodesByFile.get(filePath)!.push(nodeId);
   }
 
   const filePaths = Array.from(nodesByFile.keys());
@@ -218,46 +179,56 @@ export async function enrichWithGit(
           const currentMtime = stat.mtimeMs;
           const cachedBlame = cache.blame[normalizedPath];
 
-          let lineToCommit: Map<number, string>;
+          let nodeCommits: Record<string, string[]> = {};
           if (cachedBlame && cachedBlame.mtime === currentMtime) {
-            lineToCommit = new Map(
-              Object.entries(cachedBlame.lineToCommit).map(([k, v]) => [
-                parseInt(k, 10),
-                v,
-              ]),
-            );
+            nodeCommits = cachedBlame.nodeToCommits;
           } else {
-            const targetLines = new Set<number>();
-            for (const nodeId of nodeIds) {
-              const startLine = graph.getNodeAttributes(nodeId).metadata?.startLine as number | undefined;
-              if (startLine) targetLines.add(startLine);
-            }
-
             const blameOut = await git.raw(["blame", "--line-porcelain", filePath]);
-            lineToCommit = new Map<number, string>();
+            const allLineToCommit = new Map<number, string>();
+            let maxLine = 0;
+            
             for (const line of blameOut.split("\n")) {
               if (line.match(/^[0-9a-f]{40} /)) {
                 const parts = line.split(" ");
                 const lineNum = parseInt(parts[2]!, 10);
-                if (targetLines.has(lineNum)) {
-                  lineToCommit.set(lineNum, parts[0]!);
-                }
+                allLineToCommit.set(lineNum, parts[0]!);
+                if (lineNum > maxLine) maxLine = lineNum;
               }
             }
+
+            for (const nodeId of nodeIds) {
+              let startLine = graph.getNodeAttributes(nodeId).metadata?.startLine as number | undefined;
+              let endLine = graph.getNodeAttributes(nodeId).metadata?.endLine as number | undefined;
+              
+              if (!startLine) {
+                if (graph.getNodeAttributes(nodeId).type === "file") {
+                  startLine = 1;
+                  endLine = maxLine;
+                } else {
+                  continue;
+                }
+              }
+              const finalEnd = endLine || startLine;
+              
+              const uniqueCommits = new Set<string>();
+              for (let i = startLine; i <= finalEnd; i++) {
+                const hash = allLineToCommit.get(i);
+                if (hash && !hash.startsWith("00000000")) {
+                  uniqueCommits.add(hash);
+                }
+              }
+              nodeCommits[nodeId] = Array.from(uniqueCommits);
+            }
+
             cache.blame[normalizedPath] = {
               mtime: currentMtime,
-              lineToCommit: Object.fromEntries(
-                [...lineToCommit.entries()].map(([k, v]) => [String(k), v]),
-              ),
+              nodeToCommits: nodeCommits,
             };
           }
 
           for (const nodeId of nodeIds) {
-            const data = graph.getNodeAttributes(nodeId);
-            const startLine = data.metadata?.startLine as number | undefined;
-            if (startLine && lineToCommit.has(startLine)) {
-              const hash = lineToCommit.get(startLine)!;
-              if (hash.startsWith("00000000")) continue;
+            const commits = nodeCommits[nodeId] || [];
+            for (const hash of commits) {
               const intentNodeId = await ensureCommitNode(hash);
               if (!graph.hasEdge(intentNodeId, nodeId)) {
                 graph.addEdge(intentNodeId, nodeId, {
@@ -268,7 +239,7 @@ export async function enrichWithGit(
             }
           }
         } catch {
-          // Skip
+          // Skip untracked/unblameable files silently
         }
       }),
     );
