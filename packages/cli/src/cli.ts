@@ -8,6 +8,7 @@ import { Worker } from "worker_threads";
 import { scanDirectory } from "./core/scanner.js";
 import { createKnowledgeGraph, resolveCallGraph } from "./core/graph.js";
 import { enrichWithGit } from "./core/git.js";
+import { analyzeGraph } from "./core/analyze.js";
 import { WorkerMessage } from "./core/types.js";
 import {
   exportGraphJson,
@@ -139,11 +140,15 @@ program
       );
       await enrichWithGit(graph, targetDir);
 
-      // Phase 6: Caveman Mode & Serialization
+      // Phase 6: Graph Analysis
+      spinner.text = chalk.gray("Analyzing graph structure...");
+      const analysis = analyzeGraph(graph);
+
+      // Phase 7: Caveman Mode & Serialization
       spinner.text = chalk.gray("Compressing graph into Caveman Mode...");
       const outDir = path.join(targetDir, ".graphine");
-      exportGraphJson(graph, outDir);
-      exportReportMarkdown(graph, outDir);
+      exportGraphJson(graph, outDir, analysis);
+      exportReportMarkdown(graph, outDir, analysis);
       exportGraphHtml(graph, outDir);
 
       const endTime = performance.now();
@@ -159,7 +164,24 @@ program
       console.log(chalk.bold("Graph Stats:"));
       console.log(chalk.dim(`  - Nodes: ${graph.order}`));
       console.log(chalk.dim(`  - Edges: ${graph.size}`));
+      console.log(chalk.dim(`  - Communities: ${analysis.communities.length}`));
       console.log(chalk.dim(`  - Time:  ${durationSeconds}s`));
+
+      if (analysis.godNodes.length > 0) {
+        console.log();
+        console.log(chalk.bold("God Nodes (architectural pillars):"));
+        for (const god of analysis.godNodes.slice(0, 5)) {
+          console.log(chalk.yellow(`  ★ ${god.name} (${god.type}, ${god.degree} connections)`));
+        }
+      }
+
+      if (analysis.surprisingConnections.length > 0) {
+        console.log();
+        console.log(chalk.bold("Surprising Connections:"));
+        for (const s of analysis.surprisingConnections.slice(0, 3)) {
+          console.log(chalk.magenta(`  ⚡ ${s.sourceName} ↔ ${s.targetName}: ${s.why}`));
+        }
+      }
 
       console.log(); // Blank line for padding
     } catch (error) {

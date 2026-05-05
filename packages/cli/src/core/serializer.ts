@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import type { MultiDirectedGraph } from "graphology";
 import type { NodeData, EdgeData, NodeType } from "./graph.js";
+import type { AnalysisResult } from "./analyze.js";
 
 /**
  * Compresses and serializes the Graphology instance into a clean JSON structure
@@ -10,6 +11,7 @@ import type { NodeData, EdgeData, NodeType } from "./graph.js";
 export function exportGraphJson(
   graph: MultiDirectedGraph<NodeData, EdgeData>,
   outDir: string,
+  analysis?: AnalysisResult,
 ) {
   if (!fs.existsSync(outDir)) {
     fs.mkdirSync(outDir, { recursive: true });
@@ -38,11 +40,24 @@ export function exportGraphJson(
     };
   });
 
-  const payload = {
+  const payload: Record<string, unknown> = {
     version: "1.0.0",
     nodes,
     edges,
   };
+
+  if (analysis) {
+    payload.analysis = {
+      godNodes: analysis.godNodes,
+      communities: analysis.communities.map((c) => ({
+        id: c.id,
+        nodeCount: c.nodes.length,
+        cohesion: c.cohesion,
+        members: c.nodes,
+      })),
+      surprisingConnections: analysis.surprisingConnections,
+    };
+  }
 
   const jsonPath = path.join(outDir, "graph.json");
   fs.writeFileSync(jsonPath, JSON.stringify(payload, null, 2), "utf-8");
@@ -57,6 +72,7 @@ export function exportGraphJson(
 export function exportReportMarkdown(
   graph: MultiDirectedGraph<NodeData, EdgeData>,
   outDir: string,
+  analysis?: AnalysisResult,
 ) {
   if (!fs.existsSync(outDir)) {
     fs.mkdirSync(outDir, { recursive: true });
@@ -88,7 +104,41 @@ export function exportReportMarkdown(
     }
   }
 
-  // Section 2: Temporal Facts (Intent)
+  // Section 2: God Nodes
+  if (analysis && analysis.godNodes.length > 0) {
+    md += `\n## God Nodes (Architectural Pillars)\n`;
+    md += `These are the most-connected entities in the codebase. Changes to these nodes have the largest ripple effect.\n\n`;
+    for (const god of analysis.godNodes) {
+      md += `- **${god.name}** (\`${god.type}\`, ${god.degree} connections)\n`;
+    }
+  }
+
+  // Section 3: Communities
+  if (analysis && analysis.communities.length > 0) {
+    md += `\n## Communities\n`;
+    md += `The codebase clusters into ${analysis.communities.length} communities of related code.\n\n`;
+    for (const comm of analysis.communities) {
+      const topMembers = comm.nodes
+        .filter((n) => !n.startsWith("commit::") && !n.startsWith("import::") && !n.startsWith("unresolved_"))
+        .slice(0, 5)
+        .map((n) => {
+          const data = graph.getNodeAttributes(n);
+          return data ? data.name : n;
+        });
+      md += `- **Community ${comm.id}** (${comm.nodes.length} nodes, cohesion: ${comm.cohesion}) — ${topMembers.join(", ")}\n`;
+    }
+  }
+
+  // Section 4: Surprising Connections
+  if (analysis && analysis.surprisingConnections.length > 0) {
+    md += `\n## Surprising Connections\n`;
+    md += `Non-obvious couplings that bridge different parts of the architecture.\n\n`;
+    for (const s of analysis.surprisingConnections) {
+      md += `- **${s.sourceName}** ↔ **${s.targetName}** (\`${s.edgeType}\`): ${s.why}\n`;
+    }
+  }
+
+  // Section 5: Temporal Facts (Intent)
   const intentNodes = graph
     .nodes()
     .filter((n) => graph.getNodeAttribute(n, "type") === "intent");
@@ -371,7 +421,7 @@ export function exportGraphHtml(
     html += \`<div class="field"><b>Name</b> \${nodeData.label}</div>\`;
     html += \`<div class="field"><b>Links</b> \${nodeData.degree}</div>\`;
 
-    if (nodeData.source_file && !['unresolved_fn', 'import'].includes(nodeData.source_file)) {
+    if (nodeData.source_file && !nodeData.source_file.startsWith('unresolved_') && nodeData.source_file !== 'import') {
       html += \`<div class="field"><b>Source</b> \${nodeData.source_file}</div>\`;
     }
 

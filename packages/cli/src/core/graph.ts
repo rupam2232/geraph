@@ -14,7 +14,10 @@ export type EdgeType =
   | "calls"
   | "defines"
   | "superseded_by"
-  | "explains";
+  | "explains"
+  | "extends"
+  | "implements"
+  | "references";
 export type ConfidenceType = "EXTRACTED" | "INFERRED" | "AMBIGUOUS";
 
 export interface NodeData {
@@ -59,7 +62,7 @@ export function resolveCallGraph(
   const realDefs = new Map<string, string>();
   for (const nodeId of graph.nodes()) {
     const data = graph.getNodeAttributes(nodeId);
-    if (!nodeId.startsWith("unresolved_fn::") && (data.type === "function" || data.type === "class")) {
+    if (!nodeId.startsWith("unresolved_") && (data.type === "function" || data.type === "class" || data.type === "type" || data.type === "interface" || data.type === "enum")) {
       const name = data.name;
       if (!realDefs.has(name)) {
         realDefs.set(name, nodeId);
@@ -68,7 +71,7 @@ export function resolveCallGraph(
   }
 
   // Find all ghost nodes and rewire them
-  const ghosts = graph.nodes().filter((n) => n.startsWith("unresolved_fn::"));
+  const ghosts = graph.nodes().filter((n) => n.startsWith("unresolved_"));
   for (const ghostId of ghosts) {
     const ghostData = graph.getNodeAttributes(ghostId);
     const realId = realDefs.get(ghostData.name);

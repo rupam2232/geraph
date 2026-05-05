@@ -91,52 +91,8 @@ export async function enrichWithGit(
     blame: {},
   };
 
-  async function getCommitMetadata(hash: string): Promise<CommitMetadata> {
-    if (cache.commits[hash]) return cache.commits[hash]!;
-    // Format: AuthorName===GRAPHINE===AuthorISODate===GRAPHINE===MessageBody
-    const rawOut = await git.raw(["show", "-s", "--format=%an===GRAPHINE===%aI===GRAPHINE===%B", hash]);
-    const parts = rawOut.split("===GRAPHINE===");
-    
-    const meta: CommitMetadata = {
-      author: parts[0]?.trim() || "Unknown",
-      date: parts[1]?.trim() || new Date().toISOString(),
-      message: parts.slice(2).join("===GRAPHINE===").trim() || "",
-    };
-    
-    cache.commits[hash] = meta;
-    return meta;
-  }
-
-  const pendingCommits = new Map<string, Promise<CommitMetadata>>();
-
-  async function ensureCommitNode(hash: string): Promise<string> {
-    const intentNodeId = `commit::${hash}`;
-    if (graph.hasNode(intentNodeId)) return intentNodeId;
-
-    if (!pendingCommits.has(hash)) {
-      pendingCommits.set(hash, getCommitMetadata(hash));
-    }
-    
-    try {
-      const meta = await pendingCommits.get(hash)!;
-      // Double check in case another concurrent call added it while we awaited
-      if (!graph.hasNode(intentNodeId)) {
-        graph.addNode(intentNodeId, {
-          type: "intent",
-          name: `Commit ${hash.substring(0, 7)}`,
-          metadata: { 
-            message: meta.message,
-            author: meta.author,
-            date: meta.date
-          },
-        });
-      }
-    } catch {
-      // If fetching metadata fails, just silently skip to prevent throwing the whole file's loop
-    }
-    
-    return intentNodeId;
-  }
+  const allDiscoveredHashes = new Set<string>();
+  const globalNodeCommits = new Map<string, string[]>();
 
 
   const nodesByFile = new Map<string, string[]>();
@@ -228,14 +184,9 @@ export async function enrichWithGit(
 
           for (const nodeId of nodeIds) {
             const commits = nodeCommits[nodeId] || [];
+            globalNodeCommits.set(nodeId, commits);
             for (const hash of commits) {
-              const intentNodeId = await ensureCommitNode(hash);
-              if (!graph.hasEdge(intentNodeId, nodeId)) {
-                graph.addEdge(intentNodeId, nodeId, {
-                  type: "explains",
-                  confidence: "EXTRACTED",
-                });
-              }
+              allDiscoveredHashes.add(hash);
             }
           }
         } catch {
@@ -243,6 +194,70 @@ export async function enrichWithGit(
         }
       }),
     );
+  }
+
+  // ── Bulk Fetch Missing Commit Metadata ─────────────────────────────────────
+  const missingHashes = Array.from(allDiscoveredHashes).filter(hash => !cache.commits[hash]);
+  
+  if (missingHashes.length > 0) {
+    const CHUNK_SIZE = 50;
+    for (let i = 0; i < missingHashes.length; i += CHUNK_SIZE) {
+      const chunk = missingHashes.slice(i, i + CHUNK_SIZE);
+      try {
+        const rawOut = await git.raw([
+          "show",
+          "--no-patch",
+          "--format=%H===GRAPHINE===%an===GRAPHINE===%aI===GRAPHINE===%B",
+          ...chunk
+        ]);
+        
+        // Split output by hash blocks. Using %H===GRAPHINE=== as an anchor
+        const blocks = rawOut.split(/(?=[0-9a-f]{40}===GRAPHINE===)/);
+        
+        for (const block of blocks) {
+          if (!block.trim()) continue;
+          const parts = block.split("===GRAPHINE===");
+          if (parts.length >= 4) {
+            const hash = parts[0]!.trim();
+            cache.commits[hash] = {
+              author: parts[1]!.trim(),
+              date: parts[2]!.trim(),
+              message: parts.slice(3).join("===GRAPHINE===").trim(),
+            };
+          }
+        }
+      } catch {
+        console.warn(chalk.yellow("\n\u26A0\u3000Warning: Failed to bulk-fetch metadata for some commits."));
+      }
+    }
+  }
+
+  // ── Synchronous Graph Insertion ────────────────────────────────────────────
+  for (const [nodeId, commits] of globalNodeCommits.entries()) {
+    for (const hash of commits) {
+      const meta = cache.commits[hash];
+      if (!meta) continue;
+
+      const intentNodeId = `commit::${hash}`;
+      if (!graph.hasNode(intentNodeId)) {
+        graph.addNode(intentNodeId, {
+          type: "intent",
+          name: `Commit ${hash.substring(0, 7)}`,
+          metadata: { 
+            message: meta.message,
+            author: meta.author,
+            date: meta.date
+          },
+        });
+      }
+
+      if (!graph.hasEdge(intentNodeId, nodeId)) {
+        graph.addEdge(intentNodeId, nodeId, {
+          type: "explains",
+          confidence: "EXTRACTED",
+        });
+      }
+    }
   }
 
   saveCache(cacheFile, cache);

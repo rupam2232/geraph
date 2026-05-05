@@ -378,6 +378,10 @@ export function parseTypeScript(
     (interface_declaration name: (type_identifier) @interface_name)
     (type_alias_declaration name: (type_identifier) @type_name)
     (enum_declaration name: (identifier) @enum_name)
+    
+    ; Capture Type References
+    (type_annotation (type_identifier) @type_reference)
+    (type_arguments (type_identifier) @type_reference)
     ` : ""}
     
     ; Capture all named function definitions
@@ -431,6 +435,22 @@ export function parseTypeScript(
           const nameNode = current.childForFieldName("name");
           if (nameNode) return nameNode.text;
         }
+      }
+      current = current.parent;
+    }
+    return null;
+  };
+
+  const getEnclosingClass = (node: Parser.SyntaxNode): string | null => {
+    let current = node.parent;
+    while (current) {
+      if (
+        current.type === "class_declaration" ||
+        current.type === "abstract_class_declaration" ||
+        current.type === "interface_declaration"
+      ) {
+        const nameNode = current.childForFieldName("name");
+        if (nameNode) return nameNode.text;
       }
       current = current.parent;
     }
@@ -536,6 +556,38 @@ export function parseTypeScript(
             type: "defines",
             confidence: "EXTRACTED",
           });
+
+          // Extract Inheritance (extends / implements)
+          if (declNode) {
+            const heritage = declNode.children.find((c) => c.type === "class_heritage");
+            if (heritage) {
+              const extendsClause = heritage.children.find((c) => c.type === "extends_clause");
+              if (extendsClause) {
+                const idNode = extendsClause.children.find((c) => c.type === "identifier" || c.type === "type_identifier");
+                if (idNode) {
+                  const baseName = idNode.text;
+                  const targetId = `unresolved_symbol::${baseName}`;
+                  if (!graph.hasNode(targetId)) {
+                    graph.addNode(targetId, { type: "class", name: baseName, unresolved: true });
+                  }
+                  graph.addEdge(classId, targetId, { type: "extends", confidence: "EXTRACTED" });
+                }
+              }
+
+              const implementsClause = heritage.children.find((c) => c.type === "implements_clause");
+              if (implementsClause) {
+                const idNodes = implementsClause.children.filter((c) => c.type === "type_identifier" || c.type === "identifier");
+                for (const idNode of idNodes) {
+                  const interfaceName = idNode.text;
+                  const targetId = `unresolved_symbol::${interfaceName}`;
+                  if (!graph.hasNode(targetId)) {
+                    graph.addNode(targetId, { type: "interface", name: interfaceName, unresolved: true });
+                  }
+                  graph.addEdge(classId, targetId, { type: "implements", confidence: "EXTRACTED" });
+                }
+              }
+            }
+          }
         }
       } else if (
         name === "func_name" ||
@@ -548,15 +600,15 @@ export function parseTypeScript(
         if (!graph.hasNode(funcId)) {
           let doc = "";
           let declNode: Parser.SyntaxNode | null = node.parent;
+          let statementNode: Parser.SyntaxNode | null = node.parent;
           
-          if (name === "var_func_name") {
-            declNode = node.parent?.parent || node.parent;
-          } else if (name === "lex_func_name") {
-            declNode = node.parent?.parent?.parent || node.parent;
+          if (name === "var_func_name" || name === "lex_func_name") {
+            declNode = node.parent; // variable_declarator
+            statementNode = node.parent?.parent || node.parent; // lexical_declaration or variable_declaration
           }
 
-          if (declNode?.previousSibling?.type === "comment") {
-            doc = declNode.previousSibling.text;
+          if (statementNode?.previousSibling?.type === "comment") {
+            doc = statementNode.previousSibling.text;
           }
           graph.addNode(funcId, {
             type: "function",
@@ -600,63 +652,44 @@ export function parseTypeScript(
             confidence: "EXTRACTED",
           });
         }
-      } else if (name === "call_method_name") {
-        const calledName = node.text;
+      } else if (name === "type_reference") {
+        const typeName = node.text;
+        if (["string", "number", "boolean", "any", "unknown", "void", "never", "null", "undefined",
+             "Date", "Array", "Record", "Promise", "Map", "Set", "Buffer", "RegExp",
+             "Partial", "Required", "Readonly", "Pick", "Omit", "Exclude", "Extract",
+             "NonNullable", "ReturnType", "Parameters", "InstanceType", "Awaited",
+             "Object", "Function", "Symbol", "Error", "TypeError", "RangeError",
+             "T", "K", "V", "U", "P", "R", "S"].includes(typeName)) continue;
 
-        // Skip ECMAScript prototype methods
-        if (BUILT_INS.has(calledName)) continue;
-
-        // Skip method calls on Node.js core modules: fs.readFileSync, path.join, os.homedir, etc.
-        // The sibling capture "call_method_object" holds the receiver — find it in the same match.
-        const receiverCapture = match.captures.find(
-          (c) => c.name === "call_method_object",
-        );
-        if (receiverCapture) {
-          const receiverText = receiverCapture.node.text;
-          // Strip 'node:' prefix (e.g. 'node:fs' → 'fs') before lookup
-          const receiverName = receiverText.replace(/^node:/, "");
-          if (NODE_CORE_MODULES.has(receiverName)) continue;
+        const sourceFn = getEnclosingFunction(node);
+        const sourceCls = getEnclosingClass(node);
+        
+        let callerId = "";
+        if (sourceFn) {
+          callerId = `${filePath}::function::${sourceFn}`;
+        } else if (sourceCls) {
+          callerId = `${filePath}::class::${sourceCls}`;
         }
 
-        const callLine = node.startPosition.row + 1;
-        const callerName = getEnclosingFunction(node);
-        const callerId = callerName
-          ? `${filePath}::function::${callerName}`
-          : filePath;
-
-        const targetFuncId = `unresolved_fn::${calledName}`;
-        if (!graph.hasNode(targetFuncId)) {
-          graph.addNode(targetFuncId, {
-            type: "function",
-            name: calledName,
-            metadata: {
-              external: true,
+        if (callerId && graph.hasNode(callerId)) {
+          const targetId = `unresolved_symbol::${typeName}`;
+          if (!graph.hasNode(targetId)) {
+            graph.addNode(targetId, {
+              type: "type",
+              name: typeName,
               unresolved: true,
-              reason:
-                "Called but not defined in any scanned file. Likely from an external package or a dynamic import.",
-              callerFile: filePath,
-              callerLine: callLine,
-            },
-          });
+            });
+          }
+          if (!graph.hasEdge(callerId, targetId)) {
+            graph.addEdge(callerId, targetId, { type: "references", confidence: "EXTRACTED" });
+          }
         }
-
-        if (!graph.hasNode(callerId)) {
-          graph.addNode(callerId, {
-            type: "function",
-            name: callerName || "anonymous",
-          });
-          graph.addEdge(filePath, callerId, {
-            type: "defines",
-            confidence: "EXTRACTED",
-          });
-        }
-
-        if (!graph.hasEdge(callerId, targetFuncId)) {
-          graph.addEdge(callerId, targetFuncId, {
-            type: "calls",
-            confidence: "AMBIGUOUS",
-          });
-        }
+      } else if (name === "call_method_name") {
+        // Method calls (e.g. graph.mergeNodeAttributes()) are receiver-scoped
+        // and don't represent project-level function definitions.
+        // We skip ghost node creation — only bare calls and constructors
+        // get unresolved nodes.
+        continue;
       } else if (name === "call_name" || name === "constructor_name") {
         // Bare function calls: scanDirectory(), parseFile(), require(), etc.
         // OR object instantiations: new ClassName()
@@ -671,7 +704,7 @@ export function parseTypeScript(
           ? `${filePath}::function::${callerName}`
           : filePath;
 
-        const targetFuncId = `unresolved_fn::${calledName}`;
+        const targetFuncId = `unresolved_symbol::${calledName}`;
         if (!graph.hasNode(targetFuncId)) {
           graph.addNode(targetFuncId, {
             type: name === "constructor_name" ? "class" : "function",
