@@ -15,6 +15,7 @@ import {
   exportReportMarkdown,
   exportGraphHtml,
 } from "./core/serializer.js";
+import { installGraphine, uninstallGraphine } from "./core/install.js";
 
 export const program = new Command();
 
@@ -186,6 +187,65 @@ program
       console.log(); // Blank line for padding
     } catch (error) {
       spinner.fail(chalk.red("Failed to scan directory."));
+      if (error instanceof Error) {
+        console.error(chalk.red(`Error: ${error.message}`));
+      }
+      process.exit(1);
+    }
+  });
+
+program
+  .command("install")
+  .description("Install Graphine context rules for AI agents (Cursor, Claude, etc.)")
+  .option("-p, --platform <platform>", "Target platform (claude, cursor, vscode, agents, copilot, antigravity)", "claude")
+  .option("-f, --force", "Force overwrite existing rules", false)
+  .action(async (options) => {
+    const targetDir = process.cwd();
+    const spinner = ora({
+      text: chalk.gray(`Installing Graphine rules for ${options.platform}...`),
+      color: "blue",
+      spinner: "dots",
+    }).start();
+
+    try {
+      const results = await installGraphine(targetDir, options);
+      spinner.succeed(chalk.green("Successfully installed Graphine intelligence bridge."));
+      console.log();
+      results.forEach(r => console.log(chalk.dim(`  - ${r}`)));
+      console.log();
+      console.log(chalk.cyan("Next Step: Run 'graphine scan' to populate the knowledge base."));
+    } catch (error) {
+      spinner.fail(chalk.red("Failed to install rules."));
+      if (error instanceof Error) {
+        console.error(chalk.red(`Error: ${error.message}`));
+      }
+      process.exit(1);
+    }
+  });
+
+program
+  .command("uninstall")
+  .description("Remove Graphine context rules from the project")
+  .action(async () => {
+    const targetDir = process.cwd();
+    const spinner = ora({
+      text: chalk.gray("Removing Graphine intelligence bridge..."),
+      color: "red",
+      spinner: "dots",
+    }).start();
+
+    try {
+      const results = await uninstallGraphine(targetDir);
+      if (results.length === 0) {
+        spinner.info(chalk.yellow("No Graphine rules found to remove."));
+      } else {
+        spinner.succeed(chalk.green("Successfully removed Graphine intelligence bridge."));
+        console.log();
+        results.forEach(r => console.log(chalk.dim(`  - ${r}`)));
+      }
+      console.log();
+    } catch (error) {
+      spinner.fail(chalk.red("Failed to remove rules."));
       if (error instanceof Error) {
         console.error(chalk.red(`Error: ${error.message}`));
       }

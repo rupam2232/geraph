@@ -264,6 +264,16 @@ export function findSurprisingConnections(
   return results;
 }
 
+export interface AnalysisResult {
+  godNodes: GodNode[];
+  communities: Community[];
+  surprisingConnections: SurprisingConnection[];
+  nodeCount: number;
+  edgeCount: number;
+  knowledgeGaps: string[];
+  suggestedQuestions: string[];
+}
+
 /**
  * Runs the full analysis pipeline: God Nodes → Communities → Surprises.
  */
@@ -277,11 +287,37 @@ export function analyzeGraph(
     communities,
   );
 
+  // Detect Knowledge Gaps: Nodes with degree 0 or 1 that aren't structural noise
+  const knowledgeGaps: string[] = [];
+  graph.forEachNode((nodeId) => {
+    if (graph.degree(nodeId) <= 1 && !isStructuralNoise(graph, nodeId)) {
+      knowledgeGaps.push(nodeId);
+    }
+  });
+
+  // Generate Suggested Questions
+  const questions: string[] = [];
+  if (surprisingConnections.length > 0) {
+    questions.push("Why are these distinct communities connected via Surprising Connections?");
+  }
+  if (godNodes.length > 0) {
+    questions.push(`How would the system react if the core logic in '${godNodes[0]?.name}' was refactored?`);
+  }
+  if (knowledgeGaps.length > 5) {
+    questions.push("There are several isolated modules; are these dead code or missing integration tests?");
+  }
+  if (communities.length > 1) {
+    questions.push("Are the boundaries between these communities enforced, or is there hidden leakage?");
+  }
+
   return {
     godNodes,
     communities,
     surprisingConnections,
     nodeCount: graph.order,
     edgeCount: graph.size,
+    knowledgeGaps: knowledgeGaps.slice(0, 10), // Limit to top 10
+    suggestedQuestions: questions,
   };
 }
+
