@@ -232,23 +232,91 @@ export function parseTypeScript(
         graph.addEdge(filePath, targetNodeId, { type: "imports", confidence: "EXTRACTED" });
 
       } else if (["class_decl", "interface_name", "type_name", "enum_name", "func_name", "method_name", "var_func_name"].includes(name)) {
+        let decl = node;
+        if (decl.parent && ["function_declaration", "method_definition", "interface_declaration", "type_alias_declaration", "enum_declaration", "class_declaration", "abstract_class_declaration", "variable_declarator"].includes(decl.parent.type)) {
+            decl = decl.parent;
+        }
+        if (decl.parent && ["export_statement", "lexical_declaration", "variable_declaration"].includes(decl.parent.type)) {
+            decl = decl.parent;
+        }
+        if (decl.parent && ["export_statement"].includes(decl.parent.type)) {
+            decl = decl.parent;
+        }
+
+        const comments: string[] = [];
+        let prev = decl.previousNamedSibling;
+        while (prev && prev.type === "comment") {
+            comments.push(prev.text);
+            prev = prev.previousNamedSibling;
+        }
+        
+        let jsdoc: { doc: string; deprecated: boolean; links: string[] } | null = null;
+        if (comments.length > 0) {
+            comments.reverse();
+            const docText = comments.join("\n");
+            const links: string[] = [];
+            const seeMatches = [...docText.matchAll(/@see\s+([^\s}]+)/g)];
+            for (const m of seeMatches) if (m[1]) links.push(m[1].replace(/['"]/g, ""));
+            const linkMatches = [...docText.matchAll(/{@link\s+([^\s}]+)/g)];
+            for (const m of linkMatches) if (m[1]) links.push(m[1].replace(/['"]/g, ""));
+            
+            jsdoc = { doc: docText, deprecated: docText.includes("@deprecated"), links };
+        }
+
         const symName = node.text.trim();
-        const symId = `${filePath}::${symName}`;
+        // Fallback name parsing for class_decl (since it matches the full class_declaration)
+        let finalSymName = symName;
+        if (name === "class_decl" && node.type === "class_declaration") {
+            const nameNode = node.childForFieldName("name");
+            if (nameNode) finalSymName = nameNode.text.trim();
+        }
+        
+        const symId = `${filePath}::${finalSymName}`;
         const typeMap: Record<string, NodeType> = {
             class_decl: "class", interface_name: "interface", type_name: "type", enum_name: "enum",
             func_name: "function", method_name: "function", var_func_name: "function"
         };
 
-        if (!graph.hasNode(symId)) {
-          graph.addNode(symId, {
+        const nodeAttrs = {
             type: typeMap[name] || "function",
-            name: symName,
+            name: finalSymName,
             file: filePath,
             startLine: node.startPosition.row + 1,
-            metadata: { endLine: (node.parent?.endPosition?.row ?? node.startPosition.row) + 1 }
-          });
+            metadata: { 
+                endLine: (node.parent?.endPosition?.row ?? node.startPosition.row) + 1,
+                doc: jsdoc?.doc,
+                deprecated: jsdoc?.deprecated || false,
+                external: false,
+                unresolved: false
+            }
+        };
+
+        if (!graph.hasNode(symId)) {
+          graph.addNode(symId, nodeAttrs);
           graph.addEdge(filePath, symId, { type: "defines", confidence: "EXTRACTED" });
+        } else {
+          graph.mergeNodeAttributes(symId, nodeAttrs);
+          if (!graph.hasEdge(filePath, symId)) {
+              graph.addEdge(filePath, symId, { type: "defines", confidence: "EXTRACTED" });
+          }
         }
+
+        if (jsdoc && jsdoc.links.length > 0) {
+            for (const link of jsdoc.links) {
+                let targetPath = link;
+                if (link.startsWith(".")) {
+                    targetPath = resolveImportToNode(link, filePath) || link;
+                }
+                
+                if (!graph.hasNode(targetPath)) {
+                    graph.addNode(targetPath, { type: "file", name: path.basename(targetPath), file: targetPath, startLine: 0, metadata: { external: true } });
+                }
+                if (!graph.hasEdge(symId, targetPath)) {
+                    graph.addEdge(symId, targetPath, { type: "explains", confidence: "EXTRACTED" });
+                }
+            }
+        }
+
 
       } else if (name === "type_reference") {
         const referencedTypeName = node.text.trim();

@@ -27,6 +27,15 @@ If you need to know who calls a function, what dependencies a file has, or what 
 - **Search by ID Next**: The initial query will return unique IDs (e.g., `src/core/git.ts::saveCache`). For 100% surgical precision in subsequent lookups, query the exact ID.
 - **Empty Results**: If a query returns nothing, the symbol does not exist in the scanned scope. Check for typos or try querying the file name instead.
 
+#### Understanding Query Results
+The `query` command outputs a JSON object with three main keys:
+1. **`target`**: The node you searched for. Pay special attention to the `metadata` object inside it.
+   - `metadata.doc`: The full JSDoc block comment for the node. **ALWAYS read this** to understand the "Why" and the intended usage of the function/class.
+   - `metadata.deprecated`: If `true`, NEVER use or recommend this node in new code.
+   - `line` & `metadata.endLine`: The exact line range of the definition.
+2. **`incoming`**: Nodes that depend on the target (e.g., functions that call it, or files that import it).
+3. **`outgoing`**: Nodes that the target depends on (e.g., what functions it calls internally).
+
 ### 2. After Modifying Code (The Scan Command)
 Graphine tracks the codebase statically. If you add, delete, or rename files, functions, or classes, the graph will become out of date.
 **Syntax**: `npx graphine scan`
