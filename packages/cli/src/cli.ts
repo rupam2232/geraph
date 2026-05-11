@@ -22,7 +22,7 @@ export const program = new Command();
 program
   .name("graphine")
   .description(chalk.blue("Graphine: Local-first AI context extraction tool"))
-  .version("0.0.0");
+  .version("0.0.0", "-v, --version", "output the current version");
 
 program
   .command("scan")
@@ -76,7 +76,10 @@ program
       );
 
       let parsedCount = 0;
-      const workers = Array.from({ length: numWorkers }, () => new Worker(workerPath));
+      const workers = Array.from(
+        { length: numWorkers },
+        () => new Worker(workerPath),
+      );
       const queue = [...files];
 
       await Promise.all(
@@ -88,7 +91,11 @@ program
             await new Promise<void>((resolve) => {
               const onMessage = (msg: WorkerMessage) => {
                 if (msg.error) {
-                  console.error(chalk.yellow(`\n\u26A0\u3000Worker error for ${file}: ${msg.error}`));
+                  console.error(
+                    chalk.yellow(
+                      `\n\u26A0\u3000Worker error for ${file}: ${msg.error}`,
+                    ),
+                  );
                 } else {
                   msg.nodes?.forEach((n) => {
                     if (!graph.hasNode(n.id)) {
@@ -114,7 +121,9 @@ program
               };
 
               const onError = (err: Error) => {
-                console.error(chalk.red(`Worker error on ${file}: ${err.message}`));
+                console.error(
+                  chalk.red(`Worker error on ${file}: ${err.message}`),
+                );
                 parsedCount++;
                 worker.off("message", onMessage);
                 worker.off("error", onError);
@@ -174,7 +183,11 @@ program
         console.log();
         console.log(chalk.bold("God Nodes (architectural pillars):"));
         for (const god of analysis.godNodes.slice(0, 5)) {
-          console.log(chalk.yellow(`  ★ ${god.name} (${god.type}, ${god.degree} connections)`));
+          console.log(
+            chalk.yellow(
+              `  ★ ${god.name} (${god.type}, ${god.degree} connections)`,
+            ),
+          );
         }
       }
 
@@ -182,7 +195,9 @@ program
         console.log();
         console.log(chalk.bold("Surprising Connections:"));
         for (const s of analysis.surprisingConnections.slice(0, 3)) {
-          console.log(chalk.magenta(`  ⚡ ${s.sourceName} ↔ ${s.targetName}: ${s.why}`));
+          console.log(
+            chalk.magenta(`  ⚡ ${s.sourceName} ↔ ${s.targetName}: ${s.why}`),
+          );
         }
       }
 
@@ -198,9 +213,14 @@ program
 
 program
   .command("install")
-  .description("Install Graphine context rules for AI agents (Cursor, Claude, etc.)")
-  .option("-p, --platform <platform>", "Target platform (claude, cursor, vscode, agents, copilot, antigravity)", "claude")
-  .option("-f, --force", "Force overwrite existing rules", false)
+  .description(
+    "Install Graphine context rules for AI agents (Cursor, Claude, etc.)",
+  )
+  .option(
+    "-p, --platform <platform>",
+    "Target platform (claude, cursor, vscode, agents, copilot, antigravity)",
+    "agents",
+  )
   .action(async (options) => {
     const targetDir = process.cwd();
 
@@ -212,11 +232,17 @@ program
 
     try {
       const results = await installGraphine(targetDir, options);
-      spinner.succeed(chalk.green("Successfully installed Graphine intelligence bridge."));
+      spinner.succeed(
+        chalk.green("Successfully installed Graphine intelligence bridge."),
+      );
       console.log();
-      results.forEach(r => console.log(chalk.dim(`  - ${r}`)));
+      results.forEach((r) => console.log(chalk.dim(`  - ${r}`)));
       console.log();
-      console.log(chalk.cyan("Next Step: Run 'graphine scan' to populate the knowledge base."));
+      console.log(
+        chalk.cyan(
+          "Next Step: Run 'graphine scan' to populate the knowledge base.",
+        ),
+      );
     } catch (error) {
       spinner.fail(chalk.red("Failed to install rules."));
       if (error instanceof Error) {
@@ -227,37 +253,12 @@ program
   });
 
 program
-  .command("query <symbol>")
-  .description("Query the knowledge graph for a specific symbol's relationships")
-  .option("-i, --incoming", "Show incoming edges (who uses this?)", true)
-  .option("-o, --outgoing", "Show outgoing edges (what does this use?)", true)
-  .option("-d, --depth <number>", "Traversal depth", "1")
-  .action(async (symbol, options) => {
-    const spinner = ora({
-      text: chalk.gray(`Querying relationships for: ${symbol}...`),
-      color: "blue",
-      spinner: "dots",
-    }).start();
-    try {
-      const { queryGraph } = await import("./core/query.js");
-      const result = await queryGraph(process.cwd(), symbol, {
-        incoming: !!options.incoming,
-        outgoing: !!options.outgoing,
-        depth: parseInt(options.depth),
-      });
-      spinner.stop();
-      console.log(JSON.stringify(result, null, 2));
-      console.log();
-    } catch (error) {
-      spinner.fail(chalk.red(`Query failed: ${error instanceof Error ? error.message : String(error)}`));
-      process.exit(1);
-    }
-  });
-
-program
   .command("uninstall")
-  .description("Remove Graphine context rules from the project")
-  .option("-g, --global", "Also remove global skills for all supported platforms", false)
+  .description("Uninstall Graphine context rules for AI agents (Cursor, Claude, etc.)")
+  .option(
+    "-p, --platform <platform>",
+    "Target platform to uninstall rules for (e.g. claude, cursor). If omitted, all platforms are uninstalled.",
+  )
   .action(async (options) => {
     const targetDir = process.cwd();
     const spinner = ora({
@@ -267,13 +268,17 @@ program
     }).start();
 
     try {
-      const results = await uninstallGraphine(targetDir, { global: !!options.global });
+      const results = await uninstallGraphine(targetDir, {
+        platform: options.platform,
+      });
       if (results.length === 0) {
         spinner.info(chalk.yellow("No Graphine rules found to remove."));
       } else {
-        spinner.succeed(chalk.green("Successfully removed Graphine intelligence bridge."));
+        spinner.succeed(
+          chalk.green("Successfully removed Graphine intelligence bridge."),
+        );
         console.log();
-        results.forEach(r => console.log(chalk.dim(`  - ${r}`)));
+        results.forEach((r) => console.log(chalk.dim(`  - ${r}`)));
       }
       console.log();
     } catch (error) {
@@ -281,6 +286,33 @@ program
       if (error instanceof Error) {
         console.error(chalk.red(`Error: ${error.message}`));
       }
+      process.exit(1);
+    }
+  });
+
+program
+  .command("query <symbol>")
+  .description(
+    "Query the knowledge graph for a specific symbol's relationships",
+  )
+  .action(async (symbol) => {
+    const spinner = ora({
+      text: chalk.gray(`Querying relationships for: ${symbol}...`),
+      color: "blue",
+      spinner: "dots",
+    }).start();
+    try {
+      const { queryGraph } = await import("./core/query.js");
+      const result = await queryGraph(process.cwd(), symbol);
+      spinner.stop();
+      console.log(JSON.stringify(result, null, 2));
+      console.log();
+    } catch (error) {
+      spinner.fail(
+        chalk.red(
+          `Query failed: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      );
       process.exit(1);
     }
   });

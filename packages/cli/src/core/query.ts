@@ -3,12 +3,6 @@ import path from "path";
 import { MultiDirectedGraph } from "graphology";
 import { NodeData, EdgeData, NodeType, EdgeType, ConfidenceType } from "./graph.js";
 
-export interface QueryOptions {
-  incoming: boolean;
-  outgoing: boolean;
-  depth: number;
-}
-
 export interface QueryResultNode {
   id: string;
   name: string;
@@ -30,8 +24,7 @@ function normalizeId(id: string): string {
 
 export async function queryGraph(
   targetDir: string,
-  symbol: string,
-  options: QueryOptions
+  symbol: string
 ): Promise<QueryResult> {
   const graphPath = path.join(targetDir, ".graphine", "graph.json");
   if (!fs.existsSync(graphPath)) {
@@ -41,7 +34,9 @@ export async function queryGraph(
   const rawData = JSON.parse(fs.readFileSync(graphPath, "utf-8"));
   const graph = new MultiDirectedGraph<NodeData, EdgeData>();
   
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const nodes = (rawData.nodes || []) as Array<Record<string, any>>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const edges = (rawData.edges || []) as Array<Record<string, any>>;
 
   nodes.forEach((n) => {
@@ -143,10 +138,10 @@ export async function queryGraph(
   const seenIn = new Set<string>();
   const seenOut = new Set<string>();
 
-  // 1. Surgical Accuracy: Only collect DIRECT neighbors.
+  // Only collect DIRECT neighbors.
   // This ensures 100% parity with the HTML graph visualization.
-  if (options.incoming) collectEdges(targetNodeId, false, seenIn);
-  if (options.outgoing) collectEdges(targetNodeId, true, seenOut);
+  collectEdges(targetNodeId, false, seenIn);
+  collectEdges(targetNodeId, true, seenOut);
 
   return result;
 }
