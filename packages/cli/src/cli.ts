@@ -15,7 +15,11 @@ import {
   exportReportMarkdown,
   exportGraphHtml,
 } from "./core/serializer.js";
-import { installGraphine, uninstallGraphine } from "./core/install.js";
+import {
+  installGraphine,
+  uninstallGraphine,
+  PLATFORMS,
+} from "./core/install.js";
 
 export const program = new Command();
 
@@ -212,81 +216,120 @@ program
   });
 
 program
-  .command("install")
+  .command("install [platforms...]")
   .description(
-    "Install Graphine context rules for AI agents (Cursor, Claude, etc.)",
+    "Install Graphine context rules for AI agents (e.g., antigravity, vscode, claude, cursor)",
   )
-  .option(
-    "-p, --platform <platform>",
-    "Target platform (claude, cursor, vscode, agents, copilot, antigravity)",
-    "agents",
-  )
-  .action(async (options) => {
+  .action(async (platforms: string[]) => {
     const targetDir = process.cwd();
+    const results: string[] = [];
 
-    const spinner = ora({
-      text: chalk.gray(`Installing Graphine rules for ${options.platform}...`),
-      color: "blue",
-      spinner: "dots",
-    }).start();
+    // If no platforms provided, default to 'agents'
+    const targets = platforms.length > 0 ? platforms : ["agents"];
 
-    try {
-      const results = await installGraphine(targetDir, options);
-      spinner.succeed(
-        chalk.green("Successfully installed Graphine intelligence bridge."),
-      );
-      console.log();
-      results.forEach((r) => console.log(chalk.dim(`  - ${r}`)));
-      console.log();
+    for (const pName of targets) {
+      if (!PLATFORMS[pName]) {
+        console.log(
+          chalk.yellow(`\n\u26A0\u3000Platform '${pName}' is not supported.`),
+        );
+        console.log(
+          chalk.gray(
+            `   Run 'graphine install' to install the default AGENTS.md for basic LLM support.\n`,
+          ),
+        );
+        continue;
+      }
+
+      const spinner = ora({
+        text: chalk.gray(`Installing Graphine rules for ${pName}...`),
+        color: "blue",
+        spinner: "dots",
+      }).start();
+
+      try {
+        const platformResults = await installGraphine(targetDir, pName);
+        spinner.succeed(chalk.green(`Installed Graphine rules for ${pName}.`));
+        console.log();
+        platformResults.forEach((r) => console.log(chalk.dim(`  - ${r}`)));
+        console.log();
+        results.push(...platformResults);
+      } catch (error) {
+        spinner.fail(chalk.red(`Failed to install rules for ${pName}.`));
+        if (error instanceof Error) {
+          console.error(chalk.red(`Error: ${error.message}`));
+        }
+      }
+    }
+
+    if (results.length > 0) {
       console.log(
         chalk.cyan(
           "Next Step: Run 'graphine scan' to populate the knowledge base.",
         ),
       );
-    } catch (error) {
-      spinner.fail(chalk.red("Failed to install rules."));
-      if (error instanceof Error) {
-        console.error(chalk.red(`Error: ${error.message}`));
-      }
-      process.exit(1);
+      console.log();
     }
   });
 
 program
-  .command("uninstall")
-  .description("Uninstall Graphine context rules for AI agents (Cursor, Claude, etc.)")
-  .option(
-    "-p, --platform <platform>",
-    "Target platform to uninstall rules for (e.g. claude, cursor). If omitted, all platforms are uninstalled.",
-  )
-  .action(async (options) => {
+  .command("uninstall [platforms...]")
+  .description("Uninstall Graphine context rules for AI agents")
+  .action(async (platforms: string[]) => {
     const targetDir = process.cwd();
-    const spinner = ora({
-      text: chalk.gray("Removing Graphine intelligence bridge..."),
-      color: "red",
-      spinner: "dots",
-    }).start();
+    const results: string[] = [];
 
-    try {
-      const results = await uninstallGraphine(targetDir, {
-        platform: options.platform,
-      });
-      if (results.length === 0) {
-        spinner.info(chalk.yellow("No Graphine rules found to remove."));
-      } else {
-        spinner.succeed(
-          chalk.green("Successfully removed Graphine intelligence bridge."),
+    // If no platforms provided, uninstall all
+    const targets = platforms.length > 0 ? platforms : [undefined];
+
+    for (const pName of targets) {
+      if (pName && !PLATFORMS[pName]) {
+        console.log(
+          chalk.yellow(
+            `\n\u26A0\u3000Platform '${pName}' is not recognized. Skipping.\n`,
+          ),
         );
-        console.log();
-        results.forEach((r) => console.log(chalk.dim(`  - ${r}`)));
+        continue;
       }
-      console.log();
-    } catch (error) {
-      spinner.fail(chalk.red("Failed to remove rules."));
-      if (error instanceof Error) {
-        console.error(chalk.red(`Error: ${error.message}`));
+
+      const spinner = ora({
+        text: chalk.gray(
+          pName
+            ? `Removing rules for ${pName}...`
+            : "Removing all Graphine rules...",
+        ),
+        color: "red",
+        spinner: "dots",
+      }).start();
+
+      try {
+        const platformResults = await uninstallGraphine(targetDir, pName);
+        results.push(...platformResults);
+        if (platformResults.length > 0) {
+          spinner.succeed(
+            chalk.green(
+              pName
+                ? `Successfully removed rules for ${pName}.`
+                : "Successfully removed all Graphine rules.",
+            ),
+          );
+          console.log();
+          platformResults.forEach((r) => console.log(chalk.dim(`  - ${r}`)));
+          console.log();
+        } else {
+          spinner.stop();
+        }
+      } catch (error) {
+        spinner.fail(
+          chalk.red(`Failed to remove rules for ${pName || "all"}.`),
+        );
+        if (error instanceof Error) {
+          console.error(chalk.red(`Error: ${error.message}`));
+        }
       }
-      process.exit(1);
+    }
+
+    if (results.length === 0) {
+      console.log(chalk.yellow("\nNo Graphine rules found to remove.\n"));
     }
   });
 

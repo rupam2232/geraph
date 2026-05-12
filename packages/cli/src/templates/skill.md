@@ -33,6 +33,7 @@ The `query` command outputs a JSON object with three main keys:
    - `metadata.doc`: The full JSDoc block comment for the node. **ALWAYS read this** to understand the "Why" and the intended usage of the function/class.
    - `metadata.deprecated`: If `true`, NEVER use or recommend this node in new code.
    - `line` & `metadata.endLine`: The exact line range of the definition.
+   - `links`: The total count of `incoming` and `outgoing` relationships this node has in the full graph. High counts indicate "Hub" or "God" nodes.
 2. **`incoming`**: Nodes that depend on the target (e.g., functions that call it, or files that import it).
 3. **`outgoing`**: Nodes that the target depends on (e.g., what functions it calls internally).
 

@@ -64,12 +64,10 @@ interface PlatformConfig {
   globalPath?: string;
 }
 
-const PLATFORMS: Record<string, PlatformConfig> = {
+export const PLATFORMS: Record<string, PlatformConfig> = {
   claude: {
     name: "Claude Code",
-    localFiles: [
-      { path: "CLAUDE.md", content: SHARED_RULES, inject: true },
-    ],
+    localFiles: [{ path: "CLAUDE.md", content: SHARED_RULES, inject: true }],
     globalPath: path.join(
       os.homedir(),
       ".claude",
@@ -80,7 +78,13 @@ const PLATFORMS: Record<string, PlatformConfig> = {
   },
   cursor: {
     name: "Cursor",
-    localFiles: [{ path: ".cursor/rules/graphine.mdc", content: CURSOR_RULE, inject: false }],
+    localFiles: [
+      {
+        path: ".cursor/rules/graphine.mdc",
+        content: CURSOR_RULE,
+        inject: false,
+      },
+    ],
   },
   antigravity: {
     name: "Antigravity",
@@ -145,24 +149,17 @@ const PLATFORMS: Record<string, PlatformConfig> = {
 };
 
 export interface InstallOptions {
-  platform: string;
+  platforms: string[];
 }
 
 export async function installGraphine(
   targetDir: string,
-  options: InstallOptions,
+  platformName: string,
 ): Promise<string[]> {
   const results: string[] = [];
-  const platform = PLATFORMS[options.platform];
-
+  const platform = PLATFORMS[platformName];
   if (!platform) {
-    throw new Error(`Unsupported platform: ${options.platform}`);
-  }
-
-  // 1. Ensure .graphine directory exists
-  const graphineDir = path.join(targetDir, ".graphine");
-  if (!fs.existsSync(graphineDir)) {
-    fs.mkdirSync(graphineDir, { recursive: true });
+    throw new Error(`Unsupported platform: ${platformName}`);
   }
 
   // Load the template content (we use our own internal template for all skills)
@@ -183,21 +180,7 @@ export async function installGraphine(
     skillContent = fs.readFileSync(templatePath, "utf-8");
   }
 
-  // 2. Handle Global Installation (The Slash Command)
-  if (skillContent && platform.globalPath) {
-    const globalDir = path.dirname(platform.globalPath);
-    if (!fs.existsSync(globalDir)) {
-      fs.mkdirSync(globalDir, { recursive: true });
-    }
-    fs.writeFileSync(platform.globalPath, skillContent);
-    results.push(`Global skill installed to ${platform.globalPath}`);
-  } else if (!skillContent && platform.globalPath) {
-    console.log(
-      chalk.red(`Failed to install global skill at ${platform.globalPath}.`),
-    );
-  }
-
-  // 3. Handle Local Installation (The Project Rule)
+  // 1. Handle Local Installation (The Project Rule)
   for (const localFile of platform.localFiles) {
     const fullPath = path.join(targetDir, localFile.path);
     const dir = path.dirname(fullPath);
@@ -235,27 +218,40 @@ export async function installGraphine(
     }
   }
 
+  // 2. Handle Global Installation (The Slash Command)
+  if (skillContent && platform.globalPath) {
+    const globalDir = path.dirname(platform.globalPath);
+    if (!fs.existsSync(globalDir)) {
+      fs.mkdirSync(globalDir, { recursive: true });
+    }
+    fs.writeFileSync(platform.globalPath, skillContent);
+    results.push(`Global skill installed at ${platform.globalPath}`);
+  } else if (!skillContent && platform.globalPath) {
+    console.log(
+      chalk.red(`Failed to install global skill at ${platform.globalPath}.`),
+    );
+  }
+
   return results;
 }
 
 export async function uninstallGraphine(
   targetDir: string,
-  options: { platform?: string } = {},
+  platformName?: string,
 ): Promise<string[]> {
   const results: string[] = [];
 
   let platformsToUninstall: PlatformConfig[] = [];
-  if (options.platform) {
-    const p = PLATFORMS[options.platform];
+  if (platformName) {
+    const p = PLATFORMS[platformName];
     if (p) platformsToUninstall.push(p);
   } else {
     platformsToUninstall = Object.values(PLATFORMS);
   }
 
-  if (options.platform && platformsToUninstall.length === 0) {
-    throw new Error(`Unsupported platform: ${options.platform}`);
+  if (platformName && platformsToUninstall.length === 0) {
+    throw new Error(`Unsupported platform: ${platformName}`);
   }
-
   for (const platform of platformsToUninstall) {
     // Clean local files
     for (const localFile of platform.localFiles) {

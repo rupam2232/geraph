@@ -10,6 +10,7 @@ export interface QueryResultNode {
   file: string;
   line: number;
   metadata?: Record<string, unknown>;
+  links?: { incoming: number; outgoing: number };
 }
 
 export interface QueryResult {
@@ -91,6 +92,10 @@ export async function queryGraph(
       file: targetAttr.file,
       line: targetAttr.startLine,
       metadata: targetAttr.metadata,
+      links: {
+        incoming: graph.inDegree(targetNodeId),
+        outgoing: graph.outDegree(targetNodeId),
+      },
     },
     incoming: [],
     outgoing: [],
