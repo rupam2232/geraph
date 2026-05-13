@@ -27,9 +27,9 @@ export async function queryGraph(
   targetDir: string,
   symbol: string
 ): Promise<QueryResult> {
-  const graphPath = path.join(targetDir, ".graphine", "graph.json");
+  const graphPath = path.join(targetDir, ".geraph", "graph.json");
   if (!fs.existsSync(graphPath)) {
-    throw new Error("Graph data not found. Run 'graphine scan' first.");
+    throw new Error("Graph data not found. Run 'npx geraph scan' first.");
   }
 
   const rawData = JSON.parse(fs.readFileSync(graphPath, "utf-8"));

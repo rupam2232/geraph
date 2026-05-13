@@ -81,7 +81,7 @@ export async function enrichWithGit(
     return;
   }
 
-  const outDir = path.join(targetDir, ".graphine");
+  const outDir = path.join(targetDir, ".geraph");
   if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
   const cacheFile = path.join(outDir, "git-cache.json");
 
@@ -196,7 +196,7 @@ export async function enrichWithGit(
     );
   }
 
-  // ── Bulk Fetch Missing Commit Metadata ─────────────────────────────────────
+  // Bulk Fetch Missing Commit Metadata
   const missingHashes = Array.from(allDiscoveredHashes).filter(hash => !cache.commits[hash]);
   
   if (missingHashes.length > 0) {
@@ -207,22 +207,22 @@ export async function enrichWithGit(
         const rawOut = await git.raw([
           "show",
           "--no-patch",
-          "--format=%H===GRAPHINE===%an===GRAPHINE===%aI===GRAPHINE===%B",
+          "--format=%H===GERAPH===%an===GERAPH===%aI===GERAPH===%B",
           ...chunk
         ]);
         
-        // Split output by hash blocks. Using %H===GRAPHINE=== as an anchor
-        const blocks = rawOut.split(/(?=[0-9a-f]{40}===GRAPHINE===)/);
+        // Split output by hash blocks. Using %H===GERAPH=== as an anchor
+        const blocks = rawOut.split(/(?=[0-9a-f]{40}===GERAPH===)/);
         
         for (const block of blocks) {
           if (!block.trim()) continue;
-          const parts = block.split("===GRAPHINE===");
+          const parts = block.split("===GERAPH===");
           if (parts.length >= 4) {
             const hash = parts[0]!.trim();
             cache.commits[hash] = {
               author: parts[1]!.trim(),
               date: parts[2]!.trim(),
-              message: parts.slice(3).join("===GRAPHINE===").trim(),
+              message: parts.slice(3).join("===GERAPH===").trim(),
             };
           }
         }
@@ -232,7 +232,7 @@ export async function enrichWithGit(
     }
   }
 
-  // ── Synchronous Graph Insertion ────────────────────────────────────────────
+  // Synchronous Graph Insertion
   for (const [nodeId, commits] of globalNodeCommits.entries()) {
     for (const hash of commits) {
       const meta = cache.commits[hash];

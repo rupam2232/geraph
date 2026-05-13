@@ -1,159 +1,130 @@
-# Turborepo starter
+<h1 align="center">Geraph</h1>
 
-This Turborepo starter is maintained by the Turborepo core team.
+<p align="center">
+  <b>Structural memory for AI agents. Build a Knowledge Graph of your codebase</b>
+</p>
 
-## Using this example
+<p align="center">
+  <a href="https://www.npmjs.com/package/geraph"><img src="https://img.shields.io/npm/v/geraph" alt="NPM Version"/></a>
+  <a href="https://github.com/rupam2232/geraph/blob/main/LICENSE"><img src="https://img.shields.io/github/license/rupam2232/geraph" alt="License"/></a>
+  <a href="https://github.com/sponsors/rupam2232"><img src="https://img.shields.io/badge/sponsor-rupam2232-ea4aaa?logo=github-sponsors" alt="Sponsor"/></a>
+</p>
 
-Run the following command:
+Geraph maps your entire codebase (code, relationships, and history) into a structural knowledge graph that AI agents can query instead of blindly grepping through files.
 
-```sh
-npx create-turbo@latest
+Works in Google Antigravity, Claude Code, Cursor, VS Code Copilot Chat, and GitHub Copilot CLI.
+
+Run the following commands to install rules and build the graph:
+```bash
+npx geraph install [platform] && npx geraph scan
 ```
 
-## What's inside?
+> **Note**: Replace `[platform]` with your actual platform name (e.g., `antigravity`, `claude`, etc.) from the table below.
 
-This Turborepo includes the following packages/apps:
+That's it. You get three files:
 
-### Apps and Packages
-
-- `docs`: a [Next.js](https://nextjs.org/) app
-- `web`: another [Next.js](https://nextjs.org/) app
-- `@repo/ui`: a stub React component library shared by both `web` and `docs` applications
-- `@repo/eslint-config`: `eslint` configurations (includes `eslint-config-next` and `eslint-config-prettier`)
-- `@repo/typescript-config`: `tsconfig.json`s used throughout the monorepo
-
-Each package/app is 100% [TypeScript](https://www.typescriptlang.org/).
-
-### Utilities
-
-This Turborepo has some additional tools already setup for you:
-
-- [TypeScript](https://www.typescriptlang.org/) for static type checking
-- [ESLint](https://eslint.org/) for code linting
-- [Prettier](https://prettier.io) for code formatting
-
-### Build
-
-To build all apps and packages, run the following command:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo build
+```
+.geraph/
+├── graph.html       open in any browser — visualize the graph: search, trace call paths, and view node details
+├── GRAPH_REPORT.md  the highlights: key architectural pillars, surprising connections, and brief
+└── graph.json       the full graph — query it anytime for surgical code modifications
 ```
 
-Without global `turbo`, use your package manager:
+Once the scan is complete, you can use the `/geraph` command in your AI assistant's chat to ask architectural questions or assign codebase-wide tasks. The assistant will utilize the `geraph query` command behind the scenes to fetch precise architectural context.
 
-```sh
-cd my-turborepo
-npx turbo build
-npm dlx turbo build
-npm exec turbo build
+---
+
+## Pick your platform
+Connect your AI assistant by installing the context rules and skills for your preferred platform.
+
+| Platform | Command |
+|----------|---------|
+| Claude Code | `npx geraph install claude` |
+| Cursor | `npx geraph install cursor` |
+| VS Code / Copilot | `npx geraph install vscode` |
+| GitHub Copilot CLI | `npx geraph install copilot` |
+| Google Antigravity | `npx geraph install antigravity` |
+| Generic Agent | `npx geraph install agents` |
+
+> **Pro Tip**: You can install multiple platforms at once: `npx geraph install vscode antigravity`
+
+After installing, run the scan command to build the structural memory:
+```bash
+npx geraph scan
+```
+---
+## Uninstall
+
+Remove Geraph context rules and skills from your project.
+
+| Platform | Command |
+|----------|---------|
+| Claude Code | `npx geraph uninstall claude` |
+| Cursor | `npx geraph uninstall cursor` |
+| VS Code / Copilot | `npx geraph uninstall vscode` |
+| GitHub Copilot CLI | `npx geraph uninstall copilot` |
+| Google Antigravity | `npx geraph uninstall antigravity` |
+| All Platforms | `npx geraph uninstall` |
+
+> **Pro Tip**: You can uninstall multiple platforms at once: `npx geraph uninstall vscode antigravity`
+
+---
+
+## What's in the report
+
+- **God nodes** — the most-connected architectural pillars in your project. Everything flows through these.
+- **Surprising connections** — non-obvious couplings between unrelated modules.
+- **Git Intent** — links your code to the "Why" by extracting architectural rationale from your commit history.
+- **Semantic JSDoc** — extracts intent, documentation, and `@deprecated` status directly from comments.
+- **Confidence tags** — every relationship is marked `EXTRACTED`, `INFERRED`, or `AMBIGUOUS`. You always know what was found vs guessed.
+
+---
+
+## What files it handles
+
+| Type | Extensions |
+|------|-----------|
+| Code | `.ts .js .tsx .jsx` |
+| Docs | `.md .json` |
+| Assets | `.png .jpg .jpeg .svg .gif .webp .mp4 .webm .mp3 .wav` |
+
+AST extraction is done locally via tree-sitter.
+
+---
+
+## Common commands
+
+```bash
+npx geraph scan                        # build graph for the current folder
+npx geraph query [query]               # instant lookup for a symbol's dependencies
+npx geraph install [platform]          # install geraph rules for a platform
+npx geraph uninstall [platform]        # remove geraph rules from a project
 ```
 
-You can build a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
+---
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
+## Ignoring files
 
-```sh
-turbo build --filter=docs
-```
+Geraph automatically respects your `.gitignore` file. Any files or folders ignored by Git will be skipped during the scan.
 
-Without global `turbo`:
+You can also create a `.geraphignore` file in your project root (using the same syntax as `.gitignore`) to explicitly exclude additional files or folders from the knowledge graph.
 
-```sh
-npx turbo build --filter=docs
-npm exec turbo build --filter=docs
-npm exec turbo build --filter=docs
-```
+---
 
-### Develop
+## Team setup
 
-To develop all apps and packages, run the following command:
+For small to medium-sized projects, we recommend committing the `.geraph/` folder to Git so everyone on the team starts with the same map.
 
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
+1. **One person runs `npx geraph scan`** and commits `.geraph/`.
+2. **Everyone pulls** — their assistant reads the graph immediately.
+3. **Run `npx geraph scan` after changes** to keep the architectural memory fresh.
 
-```sh
-cd my-turborepo
-turbo dev
-```
+> **Note**: For large-scale projects, the graph data can become quite large. In these cases, it is **not recommended** to share the `.geraph/` folder via version control.
 
-Without global `turbo`, use your package manager:
+---
 
-```sh
-cd my-turborepo
-npx turbo dev
-npm exec turbo dev
-npm exec turbo dev
-```
+## Privacy
 
-You can develop a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo dev --filter=web
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo dev --filter=web
-npm exec turbo dev --filter=web
-npm exec turbo dev --filter=web
-```
-
-### Remote Caching
-
-> [!TIP]
-> Vercel Remote Cache is free for all plans. Get started today at [vercel.com](https://vercel.com/signup?utm_source=remote-cache-sdk&utm_campaign=free_remote_cache).
-
-Turborepo can use a technique known as [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching) to share cache artifacts across machines, enabling you to share build caches with your team and CI/CD pipelines.
-
-By default, Turborepo will cache locally. To enable Remote Caching you will need an account with Vercel. If you don't have an account you can [create one](https://vercel.com/signup?utm_source=turborepo-examples), then enter the following commands:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended):
-
-```sh
-cd my-turborepo
-turbo login
-```
-
-Without global `turbo`, use your package manager:
-
-```sh
-cd my-turborepo
-npx turbo login
-npm exec turbo login
-npm exec turbo login
-```
-
-This will authenticate the Turborepo CLI with your [Vercel account](https://vercel.com/docs/concepts/personal-accounts/overview).
-
-Next, you can link your Turborepo to your Remote Cache by running the following command from the root of your Turborepo:
-
-With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed:
-
-```sh
-turbo link
-```
-
-Without global `turbo`:
-
-```sh
-npx turbo link
-npm exec turbo link
-npm exec turbo link
-```
-
-## Useful Links
-
-Learn more about the power of Turborepo:
-
-- [Tasks](https://turborepo.dev/docs/crafting-your-repository/running-tasks)
-- [Caching](https://turborepo.dev/docs/crafting-your-repository/caching)
-- [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching)
-- [Filtering](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters)
-- [Configuration Options](https://turborepo.dev/docs/reference/configuration)
-- [CLI Usage](https://turborepo.dev/docs/reference/command-line-reference)
+- **Local Extraction**: All parsing (AST) and graph building happens entirely on your local machine.
+- **Zero Cloud**: Your code never leaves your system. Everything happens inside your machine fully locally. No code, snippets, or metadata are ever sent to a server. There is no Geraph server.
+- **No Telemetry**: No usage tracking, no analytics.

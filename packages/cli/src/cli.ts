@@ -15,24 +15,21 @@ import {
   exportReportMarkdown,
   exportGraphHtml,
 } from "./core/serializer.js";
-import {
-  installGraphine,
-  uninstallGraphine,
-  PLATFORMS,
-} from "./core/install.js";
+import { installGeraph, uninstallGeraph, PLATFORMS } from "./core/install.js";
+import fs from "fs";
 
 export const program = new Command();
 
 program
-  .name("graphine")
-  .description(chalk.blue("Graphine: Local-first AI context extraction tool"))
+  .name("geraph")
+  .description(chalk.blue("Geraph: Structural memory for AI agents"))
   .version("0.0.0", "-v, --version", "output the current version");
 
 program
   .command("scan")
   .description("Scan the current directory and build the Knowledge Graph")
   .action(async () => {
-    console.log(chalk.cyan("\nGraphine Engine Started\n"));
+    console.log(chalk.cyan("\nGeraph Engine Started\n"));
 
     const targetDir = process.cwd();
 
@@ -144,10 +141,9 @@ program
         }),
       );
 
-      // Phase 4.5: Call Graph Resolution
+      spinner.text = chalk.gray("Resolving call graph...");
       // Merges unresolved_fn ghost nodes into real defined functions,
       // eliminating duplicates caused by cross-file call references.
-      spinner.text = chalk.gray("Resolving call graph...");
       resolveCallGraph(graph);
 
       // Phase 5: Temporal Fact Management (Git History)
@@ -162,7 +158,7 @@ program
 
       // Phase 7: Caveman Mode & Serialization
       spinner.text = chalk.gray("Compressing graph into Caveman Mode...");
-      const outDir = path.join(targetDir, ".graphine");
+      const outDir = path.join(targetDir, ".geraph");
       exportGraphJson(graph, outDir, analysis);
       exportReportMarkdown(graph, outDir, analysis);
       exportGraphHtml(graph, outDir);
@@ -218,7 +214,7 @@ program
 program
   .command("install [platforms...]")
   .description(
-    "Install Graphine context rules for AI agents (e.g., antigravity, vscode, claude, cursor)",
+    "Install Geraph context rules for AI agents (e.g., antigravity, vscode, claude, cursor)",
   )
   .action(async (platforms: string[]) => {
     const targetDir = process.cwd();
@@ -234,21 +230,21 @@ program
         );
         console.log(
           chalk.gray(
-            `   Run 'graphine install' to install the default AGENTS.md for basic LLM support.\n`,
+            `   Run 'npx geraph install' to install the default AGENTS.md for basic LLM support.\n`,
           ),
         );
         continue;
       }
 
       const spinner = ora({
-        text: chalk.gray(`Installing Graphine rules for ${pName}...`),
+        text: chalk.gray(`Installing Geraph rules for ${pName}...`),
         color: "blue",
         spinner: "dots",
       }).start();
 
       try {
-        const platformResults = await installGraphine(targetDir, pName);
-        spinner.succeed(chalk.green(`Installed Graphine rules for ${pName}.`));
+        const platformResults = await installGeraph(targetDir, pName);
+        spinner.succeed(chalk.green(`Installed Geraph rules for ${pName}.`));
         console.log();
         platformResults.forEach((r) => console.log(chalk.dim(`  - ${r}`)));
         console.log();
@@ -262,18 +258,20 @@ program
     }
 
     if (results.length > 0) {
-      console.log(
-        chalk.cyan(
-          "Next Step: Run 'graphine scan' to populate the knowledge base.",
-        ),
-      );
-      console.log();
+      if (!fs.existsSync(path.join(process.cwd(), ".geraph/graph.json"))) {
+        console.log(
+          chalk.cyan(
+            "Next Step: Run 'npx geraph scan' to build the graphical knowledge base.",
+          ),
+        );
+        console.log();
+      }
     }
   });
 
 program
   .command("uninstall [platforms...]")
-  .description("Uninstall Graphine context rules for AI agents")
+  .description("Uninstall Geraph context rules for AI agents")
   .action(async (platforms: string[]) => {
     const targetDir = process.cwd();
     const results: string[] = [];
@@ -295,21 +293,21 @@ program
         text: chalk.gray(
           pName
             ? `Removing rules for ${pName}...`
-            : "Removing all Graphine rules...",
+            : "Removing all Geraph rules...",
         ),
         color: "red",
         spinner: "dots",
       }).start();
 
       try {
-        const platformResults = await uninstallGraphine(targetDir, pName);
+        const platformResults = await uninstallGeraph(targetDir, pName);
         results.push(...platformResults);
         if (platformResults.length > 0) {
           spinner.succeed(
             chalk.green(
               pName
                 ? `Successfully removed rules for ${pName}.`
-                : "Successfully removed all Graphine rules.",
+                : "Successfully removed all Geraph rules.",
             ),
           );
           console.log();
@@ -329,7 +327,7 @@ program
     }
 
     if (results.length === 0) {
-      console.log(chalk.yellow("\nNo Graphine rules found to remove.\n"));
+      console.log(chalk.yellow("\nNo Geraph rules found to remove.\n"));
     }
   });
 

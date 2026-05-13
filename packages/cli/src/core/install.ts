@@ -3,53 +3,53 @@ import path from "path";
 import os from "os";
 import chalk from "chalk";
 
-const START_MARKER = "<!-- GRAPHINE_START -->";
-const END_MARKER = "<!-- GRAPHINE_END -->";
+const START_MARKER = "<!-- GERAPH_START -->";
+const END_MARKER = "<!-- GERAPH_END -->";
 
-const SHARED_RULES = `## graphine
+const SHARED_RULES = `## geraph
 
-This project uses a graphine knowledge graph.
+This project uses a geraph knowledge graph.
 
 Rules:
-- Before answering architecture or codebase questions, read \`.graphine/GRAPH_REPORT.md\` for god nodes and community structure.
-- NEVER try to read the massive \`.graphine/graph.json\` file directly. It is for internal CLI use only.
-- If the graphine CLI is available, utilize \`npx graphine query "<symbol>"\` for precise architecture navigation instead of falling back to \`grep\`.
-- After modifying code files in this session, run \`npx graphine scan\` to keep the graph current.
+- Before answering architecture or codebase questions, read \`.geraph/GRAPH_REPORT.md\` for god nodes and community structure.
+- NEVER try to read the massive \`.geraph/graph.json\` file directly. It is for internal CLI use only.
+- If the geraph CLI is available, utilize \`npx geraph query "<symbol>"\` for precise architecture navigation instead of falling back to \`grep\`.
+- After modifying code files in this session, run \`npx geraph scan\` to keep the graph current.
 `;
 
-const COPILOT_RULES = `## graphine
+const COPILOT_RULES = `## geraph
 
-For any question about this repo's architecture, structure, components, or how to add/modify/find code, your **first action must be** to read \`.graphine/GRAPH_REPORT.md\` (if it exists).
+For any question about this repo's architecture, structure, components, or how to add/modify/find code, your **first action must be** to read \`.geraph/GRAPH_REPORT.md\` (if it exists).
 
 Triggers: "how do I...", "where is...", "what does ... do", "add/modify a <component>", "explain the architecture", or anything that depends on how files or classes relate.
 
 After reading the report, answer using the graph context. Only read source files when (a) modifying/debugging specific code, (b) the graph lacks the needed detail, or (c) the graph is missing or stale.
 
-NEVER attempt to read the massive \`.graphine/graph.json\` file directly. Use the CLI instead.
-Use \`npx graphine query "<symbol>"\` to trace dependencies, and \`npx graphine scan\` to update the graph after writing code.
+NEVER attempt to read the massive \`.geraph/graph.json\` file directly. Use the CLI instead.
+Use \`npx geraph query "<symbol>"\` to trace dependencies, and \`npx geraph scan\` to update the graph after writing code.
 `;
 
 const CURSOR_RULE = `---
-description: graphine codebase knowledge graph
+description: geraph codebase knowledge graph
 alwaysApply: true
 ---
 
-This project uses a graphine knowledge graph.
+This project uses a geraph knowledge graph.
 
-- Before answering architecture or codebase questions, read .graphine/GRAPH_REPORT.md for god nodes and community structure.
-- NEVER try to read the massive \`.graphine/graph.json\` file directly. It is for internal CLI use only.
-- For cross-module "how does X relate to Y" questions or dependency tracing, prefer \`npx graphine query "<symbol>"\` over grep — it guarantees precision.
-- After modifying code files in this session, run \`npx graphine scan\` to keep the graph current.
+- Before answering architecture or codebase questions, read .geraph/GRAPH_REPORT.md for god nodes and community structure.
+- NEVER try to read the massive \`.geraph/graph.json\` file directly. It is for internal CLI use only.
+- For cross-module "how does X relate to Y" questions or dependency tracing, prefer \`npx geraph query "<symbol>"\` over grep — it guarantees precision.
+- After modifying code files in this session, run \`npx geraph scan\` to keep the graph current.
 `;
 
 const ANTIGRAVITY_WORKFLOW = `---
-name: graphine
+name: geraph
 description: Navigate codebase architecture and dependencies
 ---
 
-# Workflow: graphine
+# Workflow: geraph
 
-Follow the graphine skill installed at ~/.agent/skills/graphine/SKILL.md to run queries.
+Follow the geraph skill installed at ~/.agent/skills/geraph/SKILL.md to run queries.
 `;
 
 interface LocalFileConfig {
@@ -72,7 +72,7 @@ export const PLATFORMS: Record<string, PlatformConfig> = {
       os.homedir(),
       ".claude",
       "skills",
-      "graphine",
+      "geraph",
       "SKILL.md",
     ),
   },
@@ -80,7 +80,7 @@ export const PLATFORMS: Record<string, PlatformConfig> = {
     name: "Cursor",
     localFiles: [
       {
-        path: ".cursor/rules/graphine.mdc",
+        path: ".cursor/rules/geraph.mdc",
         content: CURSOR_RULE,
         inject: false,
       },
@@ -90,12 +90,12 @@ export const PLATFORMS: Record<string, PlatformConfig> = {
     name: "Antigravity",
     localFiles: [
       {
-        path: ".agent/rules/graphine.md",
+        path: ".agent/rules/geraph.md",
         content: SHARED_RULES,
         inject: false,
       },
       {
-        path: ".agent/workflows/graphine.md",
+        path: ".agent/workflows/geraph.md",
         content: ANTIGRAVITY_WORKFLOW,
         inject: false,
       },
@@ -104,7 +104,7 @@ export const PLATFORMS: Record<string, PlatformConfig> = {
       os.homedir(),
       ".agent",
       "skills",
-      "graphine",
+      "geraph",
       "SKILL.md",
     ),
   },
@@ -125,7 +125,7 @@ export const PLATFORMS: Record<string, PlatformConfig> = {
       os.homedir(),
       ".copilot",
       "skills",
-      "graphine",
+      "geraph",
       "SKILL.md",
     ),
   },
@@ -142,7 +142,7 @@ export const PLATFORMS: Record<string, PlatformConfig> = {
       os.homedir(),
       ".copilot",
       "skills",
-      "graphine",
+      "geraph",
       "SKILL.md",
     ),
   },
@@ -152,7 +152,7 @@ export interface InstallOptions {
   platforms: string[];
 }
 
-export async function installGraphine(
+export async function installGeraph(
   targetDir: string,
   platformName: string,
 ): Promise<string[]> {
@@ -235,7 +235,7 @@ export async function installGraphine(
   return results;
 }
 
-export async function uninstallGraphine(
+export async function uninstallGeraph(
   targetDir: string,
   platformName?: string,
 ): Promise<string[]> {
@@ -275,7 +275,7 @@ export async function uninstallGraphine(
             } else {
               fs.writeFileSync(fullPath, cleaned + "\n");
               results.push(
-                `${localFile.path} cleaned (graphine section removed)`,
+                `${localFile.path} cleaned (geraph section removed)`,
               );
             }
           }
@@ -292,10 +292,10 @@ export async function uninstallGraphine(
       fs.unlinkSync(platform.globalPath);
       results.push(`Global skill removed from ${platform.globalPath}`);
 
-      // Cleanup empty parent directories, strictly only for "graphine" directories
+      // Cleanup empty parent directories, strictly only for "geraph" directories
       let currentDir = path.dirname(platform.globalPath);
       while (currentDir !== os.homedir()) {
-        if (path.basename(currentDir) !== "graphine") {
+        if (path.basename(currentDir) !== "geraph") {
           break; // Stop cleaning up to avoid deleting ~/.agents or ~/.claude
         }
         try {

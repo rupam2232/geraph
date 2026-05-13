@@ -1,29 +1,49 @@
 {
-  "name": "@repo/cli",
-  "version": "0.0.0",
-  "description": "",
-  "main": "./dist/index.js",
-  "module": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "name": "geraph",
+  "version": "0.1.0",
+  "description": "Structural memory for AI agents. Build semantic knowledge graphs from your codebase for surgical code modifications.",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
   "bin": {
-    "graphine": "./dist/index.js"
+    "geraph": "dist/index.js"
   },
   "scripts": {
-    "dev": "tsx watch src/index.ts",
     "build": "tsup src/index.ts src/core/worker.ts --format esm --clean --dts && node scripts/copy-templates.js",
     "check-types": "tsc --noEmit",
     "lint": "eslint ."
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "keywords": [
+    "graph",
+    "ai",
+    "context",
+    "llm",
+    "ast",
+    "knowledge-graph",
+    "cli",
+    "agentic-coding"
+  ],
+  "author": "Rupam Mondal",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rupam2232/geraph.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "type": "module",
   "devDependencies": {
     "@repo/eslint-config": "*",
     "@repo/typescript-config": "*",
     "@types/node": "^25.6.0",
     "tsup": "^8.5.1",
-    "tsx": "^4.21.0",
     "typescript": "^5.9.2"
   },
   "dependencies": {

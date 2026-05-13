@@ -28,10 +28,10 @@ export async function scanDirectory(targetDir: string): Promise<string[]> {
     ig.add(fs.readFileSync(gitignorePath, "utf8"));
   }
 
-  // Load .graphineignore if it exists
-  const graphineignorePath = path.resolve(targetDir, ".graphineignore");
-  if (fs.existsSync(graphineignorePath)) {
-    ig.add(fs.readFileSync(graphineignorePath, "utf8"));
+  // Load .geraphignore if it exists
+  const geraphignorePath = path.resolve(targetDir, ".geraphignore");
+  if (fs.existsSync(geraphignorePath)) {
+    ig.add(fs.readFileSync(geraphignorePath, "utf8"));
   }
 
   // Always ignore node_modules and typical build directories
