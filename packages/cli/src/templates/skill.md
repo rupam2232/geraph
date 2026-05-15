@@ -12,8 +12,9 @@ Geraph is a structural memory engine that tracks dependencies, function calls, i
 When executed, Geraph parses the codebase AST (Abstract Syntax Tree) without executing any code. It builds a graph mapping all relationships and outputs its data into the `.geraph/` directory.
 
 ### Key Outputs
-- **`.geraph/GRAPH_REPORT.md`**: A human-readable architectural summary containing project stats, core architectural pillars ("God Nodes"), and community clustering. **Always read this file first** to understand the high-level architecture before answering complex questions.
-- **`.geraph/graph.json`**: The raw serialized graph data used by the CLI.
+- **`.geraph/GRAPH_REPORT.md`**: A human-readable architectural summary containing project stats, core architectural pillars ("God Nodes"), and community clustering. **Always read this file first** to understand the high-level architecture. Note that for large projects, this report is truncated to the "Top 100" files and "Top 50" recent commits. Use the `query` command for surgical precision and complete history.
+- **`.geraph/graph.html`**: An interactive 2D/3D visualization of the codebase. Useful for humans to spot clusters and flow, but not for AI agents.
+- **`.geraph/graph.json`**: The raw serialized graph data. **CRITICAL**: NEVER attempt to read this file directly as it can be massive and will overflow your context window. Always use the `query` command to fetch filtered, token-efficient data.
 
 ## Operational Protocol
 
