@@ -14,12 +14,21 @@ Geraph maps your entire codebase (code, relationships, and history) into a struc
 
 Works in Google Antigravity, Claude Code, Cursor, VS Code Copilot Chat, and GitHub Copilot CLI.
 
-Run the following commands to install rules and build the graph:
+## Installation & Setup
+Run the following commands to install geraph cli, platform specific rules and build the graph:
+
 ```bash
-npx geraph install [platform] && npx geraph scan
+# 1. Install globally
+npm install -g geraph
+
+# 2. Setup your favorite AI assistant
+geraph install [platform]
+
+# 3. Map your project
+geraph scan
 ```
 
-> **Note**: Replace `[platform]` with your actual platform name (e.g., `antigravity`, `claude`, etc.) from the table below.
+> **Note**: Replace `[platform]` with your actual platform name (e.g., `vscode`, `antigravity`, `claude`, `cursor`) from the table below.
 
 That's it. You get three files:
 
@@ -39,19 +48,15 @@ Connect your AI assistant by installing the context rules and skills for your pr
 
 | Platform | Command |
 |----------|---------|
-| Claude Code | `npx geraph install claude` |
-| Cursor | `npx geraph install cursor` |
-| VS Code / Copilot | `npx geraph install vscode` |
-| GitHub Copilot CLI | `npx geraph install copilot` |
-| Google Antigravity | `npx geraph install antigravity` |
-| Generic Agent | `npx geraph install agents` |
+| Claude Code | `geraph install claude` |
+| Cursor | `geraph install cursor` |
+| VS Code / Copilot | `geraph install vscode` |
+| GitHub Copilot CLI | `geraph install copilot` |
+| Google Antigravity | `geraph install antigravity` |
+| Generic Agent | `geraph install agents` |
 
-> **Pro Tip**: You can install multiple platforms at once: `npx geraph install vscode antigravity`
+> **Pro Tip**: You can install multiple platforms at once: `geraph install vscode antigravity`
 
-After installing, run the scan command to build the structural memory:
-```bash
-npx geraph scan
-```
 ---
 ## Uninstall
 
@@ -59,14 +64,14 @@ Remove Geraph context rules and skills from your project.
 
 | Platform | Command |
 |----------|---------|
-| Claude Code | `npx geraph uninstall claude` |
-| Cursor | `npx geraph uninstall cursor` |
-| VS Code / Copilot | `npx geraph uninstall vscode` |
-| GitHub Copilot CLI | `npx geraph uninstall copilot` |
-| Google Antigravity | `npx geraph uninstall antigravity` |
-| All Platforms | `npx geraph uninstall` |
+| Claude Code | `geraph uninstall claude` |
+| Cursor | `geraph uninstall cursor` |
+| VS Code / Copilot | `geraph uninstall vscode` |
+| GitHub Copilot CLI | `geraph uninstall copilot` |
+| Google Antigravity | `geraph uninstall antigravity` |
+| All Platforms | `geraph uninstall` |
 
-> **Pro Tip**: You can uninstall multiple platforms at once: `npx geraph uninstall vscode antigravity`
+> **Pro Tip**: You can uninstall multiple platforms at once: `geraph uninstall vscode antigravity`
 
 ---
 
@@ -95,11 +100,16 @@ AST extraction is done locally via tree-sitter.
 ## Common commands
 
 ```bash
-npx geraph scan                        # build graph for the current folder
-npx geraph query [query]               # instant lookup for a symbol's dependencies
-npx geraph install [platform]          # install geraph rules for a platform
-npx geraph uninstall [platform]        # remove geraph rules from a project
+geraph scan                                    # build graph for the current folder
+geraph search '<term>' [--type <type>]         # discover multiple nodes matching a term
+geraph query '<symbol>' [--type <type>] [--source <file>] # instant lookup for a symbol's dependencies
+geraph install [platform]                      # install geraph rules for a platform
+geraph uninstall [platform]                    # remove geraph rules from a project
 ```
+
+**Options for Search & Query:**
+- `--type <type>`: Filter results by node type (e.g., `interface`, `class`, `function`, `file`).
+- `--source <file>`: (*Query only*) Filter results by the source file path to resolve ambiguous symbols.
 
 ---
 
@@ -115,9 +125,9 @@ You can also create a `.geraphignore` file in your project root (using the same 
 
 For small to medium-sized projects, we recommend committing the `.geraph/` folder to Git so everyone on the team starts with the same map.
 
-1. **One person runs `npx geraph scan`** and commits `.geraph/`.
+1. **One person runs `geraph scan`** and commits `.geraph/`.
 2. **Everyone pulls** — their assistant reads the graph immediately.
-3. **Run `npx geraph scan` after changes** to keep the architectural memory fresh.
+3. **Run `geraph scan` after changes** to keep the architectural memory fresh.
 
 > **Note**: For large-scale projects, the graph data can become quite large. In these cases, it is **not recommended** to share the `.geraph/` folder via version control.
 

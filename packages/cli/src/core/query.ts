@@ -23,13 +23,10 @@ function normalizeId(id: string): string {
   return id.replace(/\\/g, "/");
 }
 
-export async function queryGraph(
-  targetDir: string,
-  symbol: string
-): Promise<QueryResult> {
+function loadGraph(targetDir: string): MultiDirectedGraph<NodeData, EdgeData> {
   const graphPath = path.join(targetDir, ".geraph", "graph.json");
   if (!fs.existsSync(graphPath)) {
-    throw new Error("Graph data not found. Run 'npx geraph scan' first.");
+    throw new Error("Graph data not found. Run 'geraph scan' first.");
   }
 
   const rawData = JSON.parse(fs.readFileSync(graphPath, "utf-8"));
@@ -43,11 +40,12 @@ export async function queryGraph(
   nodes.forEach((n) => {
     const nid = normalizeId(n.id as string);
     if (!graph.hasNode(nid)) {
-      const { name, type, file, startLine, ...metadata } = n;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { id, name, type, file, startLine, ...metadata } = n;
       graph.addNode(nid, {
         name: (name as string) || "",
         type: type as NodeType,
-        file: (file as string) || "",
+        file: normalizeId((file as string) || ""),
         startLine: (startLine as number) || 0,
         metadata: (metadata as Record<string, unknown>) || {},
       });
@@ -66,21 +64,106 @@ export async function queryGraph(
     }
   });
 
+  return graph;
+}
+
+export interface SearchResultNode {
+  id: string;
+  name: string;
+  type: string;
+  file: string;
+  links: number;
+}
+
+export async function searchGraph(
+  targetDir: string,
+  term: string,
+  targetType?: string
+): Promise<SearchResultNode[]> {
+  const graph = loadGraph(targetDir);
+  const lowerTerm = term.toLowerCase();
+  
+  const results: SearchResultNode[] = [];
+  
+  graph.forEachNode((nodeId, attr) => {
+    if (targetType && attr.type !== targetType) return;
+    
+    // Match if the ID or the Name includes the search term
+    if (nodeId.toLowerCase().includes(lowerTerm) || (attr.name && attr.name.toLowerCase().includes(lowerTerm))) {
+      results.push({
+        id: nodeId,
+        name: attr.name,
+        type: attr.type,
+        file: attr.file,
+        links: graph.degree(nodeId)
+      });
+    }
+  });
+
+  // Sort by number of connections (most important nodes first)
+  return results.sort((a, b) => b.links - a.links);
+}
+
+export async function queryGraph(
+  targetDir: string,
+  symbol: string,
+  targetType?: string,
+  targetSource?: string
+): Promise<QueryResult> {
+  const graph = loadGraph(targetDir);
+
   // Find node by exact ID first, then fuzzy match name
   const normSymbol = normalizeId(symbol);
   let targetNodeId = graph.hasNode(normSymbol) ? normSymbol : null;
 
-  if (!targetNodeId) {
-    targetNodeId = graph.findNode((nodeId, attr) => 
-      (attr && attr.name && attr.name.toLowerCase() === symbol.toLowerCase()) || 
-      nodeId.toLowerCase() === normSymbol.toLowerCase() ||
-      nodeId.toLowerCase().endsWith("/" + normSymbol.toLowerCase()) ||
-      nodeId.toLowerCase().endsWith("::" + normSymbol.toLowerCase())
-    ) ?? null;
+  // If a specific type or source is requested and the exact ID match fails them, discard it.
+  if (targetNodeId && (targetType || targetSource)) {
+      const attr = graph.getNodeAttributes(targetNodeId);
+      if (targetType && attr.type !== targetType) {
+          targetNodeId = null;
+      }
+      if (targetNodeId && targetSource) {
+          const normSource = normalizeId(targetSource);
+          if (!attr.file.toLowerCase().endsWith(normSource.toLowerCase())) {
+             targetNodeId = null;
+          }
+      }
   }
 
   if (!targetNodeId) {
-    throw new Error(`Symbol '${symbol}' not found in the graph.`);
+    // Attempt Case-Sensitive Match First
+    targetNodeId = graph.findNode((nodeId, attr) => {
+      if (targetType && attr.type !== targetType) return false;
+      if (targetSource) {
+          const normSource = normalizeId(targetSource);
+          if (!attr.file.endsWith(normSource)) return false;
+      }
+      return (attr && attr.name && attr.name === symbol) || 
+      nodeId === normSymbol ||
+      nodeId.endsWith("/" + normSymbol) ||
+      nodeId.endsWith("::" + normSymbol);
+    }) ?? null;
+  }
+
+  if (!targetNodeId) {
+    // Fallback to Case-Insensitive Match
+    targetNodeId = graph.findNode((nodeId, attr) => {
+      if (targetType && attr.type !== targetType) return false;
+      if (targetSource) {
+          const normSource = normalizeId(targetSource);
+          if (!attr.file.toLowerCase().endsWith(normSource.toLowerCase())) return false;
+      }
+      return (attr && attr.name && attr.name.toLowerCase() === symbol.toLowerCase()) || 
+      nodeId.toLowerCase() === normSymbol.toLowerCase() ||
+      nodeId.toLowerCase().endsWith("/" + normSymbol.toLowerCase()) ||
+      nodeId.toLowerCase().endsWith("::" + normSymbol.toLowerCase());
+    }) ?? null;
+  }
+
+  if (!targetNodeId) {
+    const typeMsg = targetType ? ` of type '${targetType}'` : "";
+    const sourceMsg = targetSource ? ` in source '${targetSource}'` : "";
+    throw new Error(`Symbol '${symbol}'${typeMsg}${sourceMsg} not found in the graph.`);
   }
 
   const targetAttr = graph.getNodeAttributes(targetNodeId);

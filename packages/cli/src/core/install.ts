@@ -11,10 +11,16 @@ const SHARED_RULES = `## geraph
 This project uses a geraph knowledge graph.
 
 Rules:
+- If running any \`geraph\` command returns 'command not found', you MUST install it globally using \`npm install -g geraph\` before proceeding.
 - Before answering architecture or codebase questions, read \`.geraph/GRAPH_REPORT.md\` for god nodes and community structure.
 - NEVER try to read the massive \`.geraph/graph.json\` file directly. It is for internal CLI use only.
-- If the geraph CLI is available, utilize \`npx geraph query "<symbol>"\` for precise architecture navigation instead of falling back to \`grep\`.
-- After modifying code files in this session, run \`npx geraph scan\` to keep the graph current.
+- For discovery, use \`geraph search '<term>' [--type <type>]\`.
+- For precise architecture navigation, use \`geraph query '<symbol>' [--type <type>] [--source <file>]\` instead of falling back to \`grep\`.
+- After modifying code files in this session, run \`geraph scan\` to keep the graph current.
+- NEVER use \`grep\`, \`rg\`, \`find\`, or any text-search tool for architecture questions when geraph is available. Always use \`geraph search\` or \`geraph query\` instead.
+- **NOTE**: There are NO extra or hidden options for these commands. DO NOT hallucinate flags. Only use the options explicitly mentioned here.
+
+[GLOBAL_POINTER]
 `;
 
 const COPILOT_RULES = `## geraph
@@ -25,21 +31,18 @@ Triggers: "how do I...", "where is...", "what does ... do", "add/modify a <compo
 
 After reading the report, answer using the graph context. Only read source files when (a) modifying/debugging specific code, (b) the graph lacks the needed detail, or (c) the graph is missing or stale.
 
-NEVER attempt to read the massive \`.geraph/graph.json\` file directly. Use the CLI instead.
-Use \`npx geraph query "<symbol>"\` to trace dependencies, and \`npx geraph scan\` to update the graph after writing code.
-`;
+If running any \`geraph\` command returns a 'command not found' error, you MUST install it globally using \`npm install -g geraph\` before proceeding.
 
-const CURSOR_RULE = `---
-description: geraph codebase knowledge graph
-alwaysApply: true
----
+NEVER attempt to read the massive \`.geraph/graph.json\` file directly. Use the CLI instead:
+- **Discover nodes**: \`geraph search '<term>' [--type <type>]\`
+- **Trace dependencies**: \`geraph query '<symbol>' [--type <type>] [--source <file>]\`
+- **Update graph**: \`geraph scan\`
 
-This project uses a geraph knowledge graph.
+NEVER use \`grep\`, \`rg\`, \`find\`, or any text-search tool for architecture questions when geraph is available. Always use \`geraph search\` or \`geraph query\` instead.
 
-- Before answering architecture or codebase questions, read .geraph/GRAPH_REPORT.md for god nodes and community structure.
-- NEVER try to read the massive \`.geraph/graph.json\` file directly. It is for internal CLI use only.
-- For cross-module "how does X relate to Y" questions or dependency tracing, prefer \`npx geraph query "<symbol>"\` over grep — it guarantees precision.
-- After modifying code files in this session, run \`npx geraph scan\` to keep the graph current.
+**NOTE**: There are NO extra or hidden options for these commands. DO NOT hallucinate flags. Only use the options explicitly mentioned here.
+
+[GLOBAL_POINTER]
 `;
 
 const ANTIGRAVITY_WORKFLOW = `---
@@ -49,7 +52,7 @@ description: Navigate codebase architecture and dependencies
 
 # Workflow: geraph
 
-Follow the geraph skill installed at ~/.agent/skills/geraph/SKILL.md to run queries.
+[GLOBAL_POINTER]
 `;
 
 interface LocalFileConfig {
@@ -81,7 +84,12 @@ export const PLATFORMS: Record<string, PlatformConfig> = {
     localFiles: [
       {
         path: ".cursor/rules/geraph.mdc",
-        content: CURSOR_RULE,
+        content: `---
+description: geraph codebase knowledge graph
+alwaysApply: true
+---
+
+[GERAPH_SKILL_CONTENT_PLACEHOLDER]`,
         inject: false,
       },
     ],
@@ -188,8 +196,22 @@ export async function installGeraph(
       fs.mkdirSync(dir, { recursive: true });
     }
 
+    let fileContentToInject = localFile.content || skillContent;
+    fileContentToInject = fileContentToInject.replace(
+      "[GERAPH_SKILL_CONTENT_PLACEHOLDER]",
+      skillContent,
+    );
+    if (platform.globalPath) {
+      fileContentToInject = fileContentToInject.replace(
+        "[GLOBAL_POINTER]",
+        `Before answering, you MUST read the [Geraph Skill](${platform.globalPath}) operational manual.`,
+      );
+    } else {
+      fileContentToInject = fileContentToInject.replace("[GLOBAL_POINTER]", "");
+    }
+
     if (localFile.inject) {
-      const injection = `\n${START_MARKER}\n${(localFile.content || skillContent).trim()}\n${END_MARKER}\n`;
+      const injection = `\n${START_MARKER}\n${fileContentToInject.trim()}\n${END_MARKER}\n`;
 
       if (fs.existsSync(fullPath)) {
         let content = fs.readFileSync(fullPath, "utf-8");
@@ -213,7 +235,7 @@ export async function installGeraph(
       }
     } else {
       // Overwrite entirely
-      fs.writeFileSync(fullPath, localFile.content || "");
+      fs.writeFileSync(fullPath, fileContentToInject);
       results.push(`${localFile.path} created/updated`);
     }
   }

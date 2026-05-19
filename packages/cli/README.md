@@ -6,14 +6,17 @@ Geraph maps your entire projectâ€”files, functions, classes, and relationshipsâ€
 
 ## Quick Start
 
-The fastest way to use Geraph is via `npx`:
+Run the following commands to install geraph cli, platform specific rules and build the graph:
 
 ```bash
-# 1. Setup your favorite AI assistant
-npx geraph install claude  # or antigravity, vscode, cursor
+# 1. Install globally
+npm install -g geraph
 
-# 2. Map your project
-npx geraph scan
+# 2. Setup your favorite AI assistant
+geraph install claude  # or antigravity, vscode, cursor
+
+# 3. Map your project
+geraph scan
 ```
 
 ## Why Geraph?

@@ -18,61 +18,75 @@ When executed, Geraph parses the codebase AST (Abstract Syntax Tree) without exe
 
 ## Operational Protocol
 
-### 1. Tracing Dependencies (The Query Command)
-**CRITICAL RULE**: NEVER attempt to read `.geraph/graph.json` or `.geraph/graph.html` directly. These are massive serialized files. You MUST use the CLI `query` command to fetch crisp, lightweight results.
+- **CRITICAL RULE**: NEVER read `.geraph/graph.json` or `.geraph/graph.html` directly. Always use the CLI.
+- **COMMAND NOT FOUND**: If the terminal returns a 'command not found' error for any `geraph` command, you MUST install it globally using `npm install -g geraph` before proceeding.
+- **TERMINAL OUTPUT BUG**: If your agent environment/terminal fails to capture stdout (e.g., it returns "No output" or the command silently hangs), **DO NOT GIVE UP.** Run the command again and redirect the output to a file inside the `.geraph` directory: `geraph query 'Symbol' > .geraph/out.json`, then read that file. NEVER write output files to the project root.
+- **CRITICAL RULE**: DO NOT use `| head` or `| grep`. The CLI is already token-optimized and piping hides crucial error messages.
+- **MANDATORY**: You MUST wait for the terminal response after running any Geraph command. Do not hallucinate results.
 
-If you need to know who calls a function, what dependencies a file has, or what a symbol does, use the CLI.
-**Syntax**: `npx geraph query '<symbol>'`
-- **Mandatory Quoting**: Always wrap the query in single quotes to prevent terminal expansion.
-- **Search by Name First**: E.g., `npx geraph query 'saveCache'`.
-- **Search by ID Next**: The initial query will return unique IDs (e.g., `src/core/git.ts::saveCache`). For 100% surgical precision in subsequent lookups, query the exact ID.
-- **Empty Results**: If a query returns nothing, the symbol does not exist in the scanned scope. Check for typos or try querying the file name instead.
+### Command Reference
 
-#### Understanding Query Results
-The `query` command outputs a JSON object with three main keys:
-1. **`target`**: The node you searched for. Pay special attention to the `metadata` object inside it.
-   - `metadata.doc`: The full JSDoc block comment for the node. **ALWAYS read this** to understand the "Why" and the intended usage of the function/class.
-   - `metadata.deprecated`: If `true`, NEVER use or recommend this node in new code.
-   - `line` & `metadata.endLine`: The exact line range of the definition.
-   - `links`: The total count of `incoming` and `outgoing` relationships this node has in the full graph. High counts indicate "Hub" or "God" nodes.
-2. **`incoming`**: Nodes that depend on the target (e.g., functions that call it, or files that import it).
-3. **`outgoing`**: Nodes that the target depends on (e.g., what functions it calls internally).
+| Command | Syntax | When to Use |
+|---|---|---|
+| **Search** | `geraph search '<term>' [--type <type>]` | For broad/fuzzy discovery. Use when you only know part of a name or want to see all nodes matching a concept (e.g., `search 'auth'`). Returns a lightweight array of matching IDs. |
+| **Query** | `geraph query '<symbol>' [--type <type>] [--source <file>]` | For deep inspection. Use when you know the exact ID or exact name of a symbol. Returns full dependencies (`incoming`/`outgoing`) and metadata. |
+| **Scan** | `geraph scan` | Run this IMMEDIATELY after you make any type of change in the codebase to ensure the graph is up to date. |
 
-### 2. After Modifying Code (The Scan Command)
-Geraph tracks the codebase statically. If you add, delete, or rename files, functions, or classes, the graph will become out of date.
-**Syntax**: `npx geraph scan`
-- **When to run**: IMMEDIATELY after you complete any structural modifications or refactoring in the current session. This ensures subsequent queries are accurate.
+*Note on Flags: All command options/flags are optional, but it is highly recommended to use them if you know the exact type or source, as it guarantees precise results. `--type` and `--source` are the ONLY valid flags. NEVER invent flags like `--limit` or `--dfs`.*
 
-## Standard Workflows
+### JSON Response Schema
+When you run a command, it returns pure JSON on stdout. Here is how to interpret the fields:
 
-**Scenario A: "What does this function do?"**
-- Run `npx geraph query '<function_name>'`.
-- Analyze `outgoing` connections to see its internal dependencies.
-- Analyze `incoming` connections to see where it is used.
-- Use the `file` and `line` metadata in the output to directly read the implementation.
+**`search` output**: Returns an array of matching node objects, sorted by connection count (most connected first). Each object contains:
+- `id`: The unique node identifier (format: `filePath::symbolName` for code symbols, `commit::hash` for intents, or a raw file path for files).
+- `name`: The human-readable name of the symbol.
+- `type`: The node type (e.g., `function`, `class`, `interface`, `file`, `intent`).
+- `file`: The source file where this node is defined.
+- `links`: Total number of connections (incoming + outgoing). Higher means more architecturally significant.
 
-**Scenario B: "Change this component"**
-- Query the component.
-- Analyze `incoming` edges to identify all dependents. **You must ensure your changes do not break these callers.**
+**`query` output**: Returns a detailed object with `target`, `incoming`, and `outgoing`:
+- `target`: The queried node's full details:
+  - `id`, `name`, `type`, `file`, `line`: Identity and location.
+  - `metadata.doc`: Contains extracted JSDoc/comments. Read this to understand the purpose and intent of the symbol.
+  - `metadata.deprecated`: Boolean flag. If `true`, this symbol is marked `@deprecated`.
+  - `metadata.message`: (*Only on `intent` type nodes*) The Git commit message explaining why this node was created or changed.
+  - `metadata.author`, `metadata.date`: (*Only on `intent` type nodes*) Commit author and timestamp.
+  - `links.incoming` / `links.outgoing`: Count of connections in each direction.
+- `incoming`: Array of edges pointing **to** this node. Each entry has `source` (the neighbor node), `relation` (edge type), and `confidence`. Use this for **Impact Analysis** — these are the entities that depend on and will break if you change the target.
+- `outgoing`: Array of edges pointing **out** from this node. Each entry has `target` (the neighbor node), `relation`, and `confidence`. Use this to see what the node **depends on** — what it calls, imports, or references.
 
-## Geraph Glossary
+### Query Resolution Priority
+When you `query` a symbol name (e.g., `geraph query 'userState'`), Geraph resolves it in this strict order:
+1. **Exact ID Match**: Perfect match on the unique Node ID.
+2. **Case-Sensitive Match**: Matches the exact capitalization (finds the variable `userState` but ignores the interface `UserState`).
+3. **Case-Insensitive Fallback**: If no exact case match exists, it returns the case-insensitive match (returns the interface `UserState`).
 
-### Node Types
-- `file`: A source code file.
-- `function`: A standard function/method.
-- `class`: A class definition.
-- `interface` / `type` / `enum`: TypeScript type definitions.
-- `[script] filename.ts`: The top-level execution block of a file (code outside any function/class). Query this to see what a file does upon import/execution.
-- `intent`: A Git commit explaining why a node exists.
+### Standard Workflows
 
-### Edge Types
-- `imports`: File A depends on File B.
-- `calls`: Function A executes Function B.
-- `defines`: A file contains a function/class.
-- `references`: A function uses a specific type.
-- `explains`: A Git commit provides historical context for a node.
+| Scenario | Action / Command | Why |
+|---|---|---|
+| **"How does [Concept] work?"** | 1. Read `GRAPH_REPORT.md` to find God Nodes.<br>2. `geraph search '<concept>'` | Geraph is an AST graph. It does not understand English words like 'auth' or 'database'. You MUST use `search` first to find the actual code symbols (e.g. `authSlice.ts`), and then `query` those symbols. NEVER `query` a raw concept. |
+| **User mentions a file (e.g. @file:xyz.ts)** | `geraph query '<filepath>' --type file` | ALWAYS query a mentioned file first. Analyzing its `outgoing` connections instantly reveals all classes/functions defined inside it, so you don't have to guess symbol names. |
+| **"What does this function do?"**| `geraph query '<funcName>' --type function` | Read `target.metadata.doc` for intent. Look at `outgoing` for what it calls, and `incoming` for who calls it. |
+| **"Impact of changing a field/property?"** | `geraph query '<ContainerName>'` | Geraph DOES NOT index individual fields (like `avatar`). You MUST query the Interface/Class that contains the field (e.g., `UserState`), then analyze its `incoming` edges. NEVER query the field name directly. |
+| **"Impact of changing a class/function?"** | `geraph query '<symbolName>'` | Analyze the `incoming` array. These are the exact entities that depend on your target and might break. |
+| **"Query Failed / Not Found"** | `geraph search '<symbolName>'` | Do NOT fallback to `grep`. If the terminal fails to capture output, redirect to a file (`> .geraph/out.json`) and read it. If it returns a genuine "Not found" error, use the `geraph search` command to find the correct naming. |
 
-### Confidence Levels
-- `EXTRACTED`: Perfect confidence (100%).
-- `INFERRED`: High confidence (heuristics).
-- `AMBIGUOUS`: Moderate confidence (dynamic calls/overlapping names).
+### Geraph Glossary
+
+| Node Type | Description |
+|---|---|
+| `file` | A source code file. |
+| `function` | A standard function/method. |
+| `class` | A class definition. |
+| `interface`/`type`/`enum`| TypeScript type definitions. |
+| `[script] <name>` | The top-level execution block of a file (code outside any function/class). |
+| `intent` | A Git commit explaining why a node exists. |
+
+| Edge Type | Description |
+|---|---|
+| `imports` | File A depends on File B. |
+| `calls` | Function A executes Function B. |
+| `defines` | A file contains a function/class. |
+| `references` | A function uses a specific type. |
+| `explains` | A Git commit provides historical context for a node. |

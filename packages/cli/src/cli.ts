@@ -178,29 +178,8 @@ program
       console.log(chalk.dim(`  - Edges: ${graph.size}`));
       console.log(chalk.dim(`  - Communities: ${analysis.communities.length}`));
       console.log(chalk.dim(`  - Time:  ${durationSeconds}s`));
-
-      if (analysis.godNodes.length > 0) {
-        console.log();
-        console.log(chalk.bold("God Nodes (architectural pillars):"));
-        for (const god of analysis.godNodes.slice(0, 5)) {
-          console.log(
-            chalk.yellow(
-              `  ★ ${god.name} (${god.type}, ${god.degree} connections)`,
-            ),
-          );
-        }
-      }
-
-      if (analysis.surprisingConnections.length > 0) {
-        console.log();
-        console.log(chalk.bold("Surprising Connections:"));
-        for (const s of analysis.surprisingConnections.slice(0, 3)) {
-          console.log(
-            chalk.magenta(`  ⚡ ${s.sourceName} ↔ ${s.targetName}: ${s.why}`),
-          );
-        }
-      }
-
+      console.log();
+      console.log(chalk.cyan(`Type '/geraph' in your AI chat to begin.`));
       console.log(); // Blank line for padding
     } catch (error) {
       spinner.fail(chalk.red("Failed to scan directory."));
@@ -230,7 +209,7 @@ program
         );
         console.log(
           chalk.gray(
-            `   Run 'npx geraph install' to install the default AGENTS.md for basic LLM support.\n`,
+            `   Run 'geraph install' to install the default AGENTS.md for basic LLM support.\n`,
           ),
         );
         continue;
@@ -261,7 +240,7 @@ program
       if (!fs.existsSync(path.join(process.cwd(), ".geraph/graph.json"))) {
         console.log(
           chalk.cyan(
-            "Next Step: Run 'npx geraph scan' to build the graphical knowledge base.",
+            "Next Step: Run 'geraph scan' to build the graphical knowledge base.",
           ),
         );
         console.log();
@@ -332,11 +311,44 @@ program
   });
 
 program
+  .command("search <term>")
+  .description("Discover multiple nodes matching a partial term")
+  .option("-t, --type <type>", "Filter results by node type (e.g., 'interface', 'class', 'function', 'file')")
+  .action(async (term, options) => {
+    const spinner = ora({
+      text: chalk.gray(`Searching graph for: ${term}...`),
+      color: "blue",
+      spinner: "dots",
+    }).start();
+    try {
+      const { searchGraph } = await import("./core/query.js");
+      const results = await searchGraph(process.cwd(), term, options.type);
+      spinner.stop();
+      if (results.length === 0) {
+        // Use console.error for all human-readable text instead of console.log.
+        // This guarantees that stdout contains ONLY pure JSON data.
+        // This allows AI Agents to cleanly redirect output (e.g. `> .geraph/out.json`) without corrupting the JSON.
+        console.error(chalk.yellow(`No nodes found matching '${term}'`));
+      } else {
+        console.log(JSON.stringify(results, null, 2));
+        console.error(chalk.gray(`\nFound ${results.length} nodes. Use 'geraph query <id>' to inspect a specific node.`));
+      }
+    } catch (error) {
+      spinner.stop();
+      console.error(
+        chalk.red("?? Search failed:"),
+        error instanceof Error ? error.message : String(error),
+      );
+      process.exit(1);
+    }
+  });
+
+program
   .command("query <symbol>")
-  .description(
-    "Query the knowledge graph for a specific symbol's relationships",
-  )
-  .action(async (symbol) => {
+  .description("Query the knowledge graph for a specific symbol's relationships")
+  .option("-t, --type <type>", "Filter results by node type (e.g., 'interface', 'class', 'function', 'file')")
+  .option("-s, --source <path>", "Filter results by source file path (e.g., 'auth.ts')")
+  .action(async (symbol, options) => {
     const spinner = ora({
       text: chalk.gray(`Querying relationships for: ${symbol}...`),
       color: "blue",
@@ -344,10 +356,9 @@ program
     }).start();
     try {
       const { queryGraph } = await import("./core/query.js");
-      const result = await queryGraph(process.cwd(), symbol);
+      const result = await queryGraph(process.cwd(), symbol, options.type, options.source);
       spinner.stop();
       console.log(JSON.stringify(result, null, 2));
-      console.log();
     } catch (error) {
       spinner.fail(
         chalk.red(
