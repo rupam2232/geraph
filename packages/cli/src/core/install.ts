@@ -202,9 +202,10 @@ export async function installGeraph(
       skillContent,
     );
     if (platform.globalPath) {
+      const homeRelPath = platform.globalPath.replace(os.homedir(), "~").replace(/\\/g, "/");
       fileContentToInject = fileContentToInject.replace(
         "[GLOBAL_POINTER]",
-        `Before answering, you MUST read the [Geraph Skill](${platform.globalPath}) operational manual.`,
+        `Before answering, you MUST read the [Geraph Skill](${homeRelPath}) operational manual.`,
       );
     } else {
       fileContentToInject = fileContentToInject.replace("[GLOBAL_POINTER]", "");

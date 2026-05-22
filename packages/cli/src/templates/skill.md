@@ -6,43 +6,66 @@ trigger: /geraph
 
 # Geraph Operational Manual
 
-Geraph is a structural memory engine that tracks dependencies, function calls, imports, and historical context (Git commits) across the codebase. It eliminates the need to rely on `grep` or blind text searches.
+Geraph is a structural memory engine that tracks dependencies, function calls, imports, and historical context (Git commits) across the codebase. It builds a graph mapping all relationships without executing any code.
 
-## How Geraph Works
-When executed, Geraph parses the codebase AST (Abstract Syntax Tree) without executing any code. It builds a graph mapping all relationships and outputs its data into the `.geraph/` directory.
+## What You Must Do When Invoked
 
-### Key Outputs
-- **`.geraph/GRAPH_REPORT.md`**: A human-readable architectural summary containing project stats, core architectural pillars ("God Nodes"), and community clustering. **Always read this file first** to understand the high-level architecture. Note that for large projects, this report is truncated to the "Top 100" files and "Top 50" recent commits. Use the `query` command for surgical precision and complete history.
-- **`.geraph/graph.html`**: An interactive 2D/3D visualization of the codebase. Useful for humans to spot clusters and flow, but not for AI agents.
-- **`.geraph/graph.json`**: The raw serialized graph data. **CRITICAL**: NEVER attempt to read this file directly as it can be massive and will overflow your context window. Always use the `query` command to fetch filtered, token-efficient data.
+When you need to understand the architecture, find where a component is, or trace dependencies, follow this strict protocol:
 
-## Operational Protocol
+### Step 1: Read the Global Architecture Report
+Before answering architecture or codebase questions, **always read `.geraph/GRAPH_REPORT.md` first**. It contains project stats, core architectural pillars ("God Nodes"), and community clustering. 
 
-- **CRITICAL RULE**: NEVER read `.geraph/graph.json` or `.geraph/graph.html` directly. Always use the CLI.
-- **COMMAND NOT FOUND**: If the terminal returns a 'command not found' error for any `geraph` command, you MUST install it globally using `npm install -g geraph` before proceeding.
-- **TERMINAL OUTPUT BUG**: If your agent environment/terminal fails to capture stdout (e.g., it returns "No output" or the command silently hangs), **DO NOT GIVE UP.** Run the command again and redirect the output to a file inside the `.geraph` directory: `geraph query 'Symbol' > .geraph/out.json`, then read that file. NEVER write output files to the project root.
-- **CRITICAL RULE**: DO NOT use `| head` or `| grep`. The CLI is already token-optimized and piping hides crucial error messages.
-- **MANDATORY**: You MUST wait for the terminal response after running any Geraph command. Do not hallucinate results.
+### Step 2: Use `search` for Fuzzy Discovery
+If you don't know the exact ID or exact name of a symbol, you MUST use `search` first.
+```bash
+geraph search '<term>' [--type <type>]
+```
+- **Inputs**: Use a broad concept, a partial filename, or a partial function name. For example: `search 'auth'`, `search 'database'`, `search 'User'`.
+- **Options**: You can filter by `--type file` or `--type function` if you know what you are looking for.
+- **Output**: Returns a lightweight list of matching Node IDs, sorted by significance. 
 
-### Command Reference
+### Step 3: Use `query` for Deep Inspection
+Once you have found the exact Node ID or exact Symbol Name from Step 2 (or if the user explicitly provided one), use `query` to fetch its full dependencies.
+```bash
+geraph query '<symbol_or_id>' [--type <type>] [--source <file>]
+```
+- **Inputs**: The exact Node ID (e.g., `src/auth/session.ts::ValidateToken`) or the exact symbol name (e.g., `ValidateToken`). If you are exploring a specific file, you can query its filepath directly (e.g., `geraph query 'src/app.ts' --type file`).
+- **Options**:
+  - `--type <type>` (e.g., `file`, `function`, `class`, `interface`, `intent`). Use this to resolve naming conflicts (e.g., if there is a function and an interface both named "User").
+  - `--source <file>` (e.g., `src/auth/session.ts`). Use this if you only know the symbol name, to ensure Geraph finds the definition in the correct file.
+- **Why use options?**: Always use `--type` and `--source` if you know them. They strictly reduce token bloat and guarantee you get the exact node you want.
 
-| Command | Syntax | When to Use |
-|---|---|---|
-| **Search** | `geraph search '<term>' [--type <type>]` | For broad/fuzzy discovery. Use when you only know part of a name or want to see all nodes matching a concept (e.g., `search 'auth'`). Returns a lightweight array of matching IDs. |
-| **Query** | `geraph query '<symbol>' [--type <type>] [--source <file>]` | For deep inspection. Use when you know the exact ID or exact name of a symbol. Returns full dependencies (`incoming`/`outgoing`) and metadata. |
-| **Scan** | `geraph scan` | Run this IMMEDIATELY after you make any type of change in the codebase to ensure the graph is up to date. |
+### Step 4: Trace the Context ("The Why")
+When you run `query`, you will see `incoming` and `outgoing` edges. 
+- **Impact Analysis**: Use `incoming` edges to see who depends on this node.
+- **Dependencies**: Use `outgoing` edges to see what this node uses.
+- **Historical Context ("The Why")**: If you see an `intent` type node connected to your target, **query that `intent` node**. Look at its `metadata.message`. This is a Git commit message that explains *why* the code exists or was changed.
 
-*Note on Flags: All command options/flags are optional, but it is highly recommended to use them if you know the exact type or source, as it guarantees precise results. `--type` and `--source` are the ONLY valid flags. NEVER invent flags like `--limit` or `--dfs`.*
+### Step 5: Keep the Graph Current
+Geraph must stay in sync with the codebase.
+- You MUST run `geraph scan` after you modify any code files.
+- You MUST run `geraph scan` after committing a change to the repository.
 
-### JSON Response Schema
-When you run a command, it returns pure JSON on stdout. Here is how to interpret the fields:
+---
 
-**`search` output**: Returns an array of matching node objects, sorted by connection count (most connected first). Each object contains:
-- `id`: The unique node identifier (format: `filePath::symbolName` for code symbols, `commit::hash` for intents, or a raw file path for files).
-- `name`: The human-readable name of the symbol.
-- `type`: The node type (e.g., `function`, `class`, `interface`, `file`, `intent`).
-- `file`: The source file where this node is defined.
-- `links`: Total number of connections (incoming + outgoing). Higher means more architecturally significant.
+## CRITICAL RULES
+
+1. **NEVER read `.geraph/graph.json` directly.** It is massive and will overflow your context window. Always use the CLI.
+2. **NO EXTRA FLAGS**: There are NO extra or hidden options for `search` or `query`. DO NOT hallucinate flags like `--limit` or `--dfs`. Only use `--type` and `--source`.
+3. **COMMAND NOT FOUND**: If the terminal returns a 'command not found' error, you MUST install it globally using `npm install -g geraph` before proceeding.
+4. **TERMINAL OUTPUT BUG**: If your terminal fails to capture stdout (e.g., it hangs or returns "No output"), DO NOT GIVE UP. Redirect the output to a file: `geraph query 'Symbol' > .geraph/out.json`, then read that file.
+5. **NEVER use `grep`, `rg`, or `find`** for architecture questions when Geraph is available.
+
+---
+
+## JSON Response Interpretation
+
+**`search` output**: Returns an array of matching node objects.
+- `id`: The unique node identifier. Use this exact string for subsequent `query` calls.
+- `name`: The human-readable name.
+- `type`: The node type (see Glossary below).
+- `file`: The source file.
+- `links`: Total connections. Higher means more architecturally significant.
 
 **`query` output**: Returns a detailed object with `target`, `incoming`, and `outgoing`:
 - `target`: The queried node's full details:
@@ -61,32 +84,34 @@ When you `query` a symbol name (e.g., `geraph query 'userState'`), Geraph resolv
 2. **Case-Sensitive Match**: Matches the exact capitalization (finds the variable `userState` but ignores the interface `UserState`).
 3. **Case-Insensitive Fallback**: If no exact case match exists, it returns the case-insensitive match (returns the interface `UserState`).
 
-### Standard Workflows
+---
 
-| Scenario | Action / Command | Why |
-|---|---|---|
-| **"How does [Concept] work?"** | 1. Read `GRAPH_REPORT.md` to find God Nodes.<br>2. `geraph search '<concept>'` | Geraph is an AST graph. It does not understand English words like 'auth' or 'database'. You MUST use `search` first to find the actual code symbols (e.g. `authSlice.ts`), and then `query` those symbols. NEVER `query` a raw concept. |
-| **User mentions a file (e.g. @file:xyz.ts)** | `geraph query '<filepath>' --type file` | ALWAYS query a mentioned file first. Analyzing its `outgoing` connections instantly reveals all classes/functions defined inside it, so you don't have to guess symbol names. |
-| **"What does this function do?"**| `geraph query '<funcName>' --type function` | Read `target.metadata.doc` for intent. Look at `outgoing` for what it calls, and `incoming` for who calls it. |
-| **"Impact of changing a field/property?"** | `geraph query '<ContainerName>'` | Geraph DOES NOT index individual fields (like `avatar`). You MUST query the Interface/Class that contains the field (e.g., `UserState`), then analyze its `incoming` edges. NEVER query the field name directly. |
-| **"Impact of changing a class/function?"** | `geraph query '<symbolName>'` | Analyze the `incoming` array. These are the exact entities that depend on your target and might break. |
-| **"Query Failed / Not Found"** | `geraph search '<symbolName>'` | Do NOT fallback to `grep`. If the terminal fails to capture output, redirect to a file (`> .geraph/out.json`) and read it. If it returns a genuine "Not found" error, use the `geraph search` command to find the correct naming. |
+## Geraph Glossary
 
-### Geraph Glossary
+Use this glossary to understand the types of nodes and edges in the graph, and to accurately choose your `--type` flag for queries.
 
-| Node Type | Description |
+### Node Types
+| Type | Description |
 |---|---|
 | `file` | A source code file. |
-| `function` | A standard function/method. |
+| `function` | A standard function, method, or arrow function. |
 | `class` | A class definition. |
 | `interface`/`type`/`enum`| TypeScript type definitions. |
-| `[script] <name>` | The top-level execution block of a file (code outside any function/class). |
 | `intent` | A Git commit explaining why a node exists. |
 
-| Edge Type | Description |
+### Edge Types (`relation`)
+| Relation | Description |
 |---|---|
 | `imports` | File A depends on File B. |
 | `calls` | Function A executes Function B. |
 | `defines` | A file contains a function/class. |
-| `references` | A function uses a specific type. |
-| `explains` | A Git commit provides historical context for a node. |
+| `references` | A function uses a specific type or interface. |
+| `explains` | A Git commit (`intent` node) provides historical context for a specific code node. |
+
+### Confidence Scores
+Every edge has a `confidence` level:
+| Confidence | Description |
+|---|---|
+| `EXTRACTED` | 100% deterministic. Found directly by the AST parser (e.g., an explicit function call). |
+| `INFERRED` | High probability. Deduced via structural heuristics or indirect relationships. |
+| `AMBIGUOUS` | Uncertain connection. Requires human/agent verification. |

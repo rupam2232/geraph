@@ -71,7 +71,6 @@ export function parseTypeScript(
 ) {
   const isTs = filePath.endsWith(".ts") || filePath.endsWith(".tsx");
   const isTsx = filePath.endsWith(".tsx");
-  const basename = path.basename(filePath);
 
   let language;
   if (isTs) {
@@ -175,12 +174,13 @@ export function parseTypeScript(
 
   const ensureScopeNode = (node: Parser.SyntaxNode): string => {
     const scope = getEnclosingScope(node);
-    const id = scope ? `${filePath}::${scope.name}` : `${filePath}::top-level`;
+    if (!scope) return filePath; // The file node itself acts as the root execution scope
     
+    const id = `${filePath}::${scope.name}`;
     if (!graph.hasNode(id)) {
       graph.addNode(id, {
-        type: scope ? scope.type : "function",
-        name: scope ? scope.name : `[script] ${basename}`,
+        type: scope.type,
+        name: scope.name,
         file: filePath,
         startLine: node.startPosition.row + 1,
         metadata: { endLine: node.endPosition.row + 1 }

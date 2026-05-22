@@ -119,11 +119,8 @@ program
   .command("scan")
   .description("Scan the current directory and build the Knowledge Graph")
   .action(async () => {
-    console.log(chalk.cyan("\nGeraph Engine Started\n"));
-
     const targetDir = process.cwd();
 
-    // Modern loading animation
     const spinner = ora({
       text: chalk.gray(`Scanning codebase in ${targetDir}...`),
       color: "cyan",
@@ -133,10 +130,10 @@ program
     const startTime = performance.now();
 
     try {
-      // Phase 2: Invoke the File Walker
+      // Phase 1: Invoke the File Walker
       const files = await scanDirectory(targetDir);
 
-      // Phase 3: Initialize Knowledge Graph
+      // Phase 2: Initialize Knowledge Graph
       spinner.text = chalk.gray("Initializing Knowledge Graph...");
       const graph = createKnowledgeGraph();
 
@@ -155,11 +152,11 @@ program
         }
       }
 
-      // Phase 4: Path Aliasing
+      // Phase 3: Path Aliasing
       spinner.text = chalk.gray("Mapping path aliases...");
       const aliasMap = buildAliasMap(files);
 
-      // Phase 5: AST Parsing
+      // Phase 4: AST Parsing
       // Optimization: Using Worker Threads to utilize all CPU cores and prevent main-thread freeze.
       spinner.text = chalk.gray(`Parsing AST for ${files.length} files...`);
 
