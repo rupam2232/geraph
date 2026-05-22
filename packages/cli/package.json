@@ -1,6 +1,6 @@
 {
   "name": "geraph",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Structural memory for AI agents. Build semantic knowledge graphs from your codebase for surgical code modifications.",
   "main": "dist/index.js",
   "module": "dist/index.js",

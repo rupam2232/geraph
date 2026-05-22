@@ -82,8 +82,9 @@ export async function enrichWithGit(
   }
 
   const outDir = path.join(targetDir, ".geraph");
-  if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
-  const cacheFile = path.join(outDir, "git-cache.json");
+  const cacheDir = path.join(outDir, "cache");
+  if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
+  const cacheFile = path.join(cacheDir, "git-cache.json");
 
   const cache: GitCache = loadCache(cacheFile) ?? {
     version: CACHE_VERSION,

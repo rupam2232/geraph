@@ -35,7 +35,7 @@ export async function scanDirectory(targetDir: string): Promise<string[]> {
   }
 
   // Always ignore node_modules and typical build directories
-  ig.add(["node_modules", "dist", ".git", ".turbo", "build"]);
+  ig.add(["node_modules", "dist", ".git", ".turbo", "build", ".geraph"]);
 
   // We need to look for files recursively
   const globPatterns = SUPPORTED_EXTENSIONS.map((ext) => `**/*.${ext}`);
@@ -54,5 +54,5 @@ export async function scanDirectory(targetDir: string): Promise<string[]> {
   const validRelativeFiles = ig.filter(allFiles);
 
   // Convert back to absolute paths using system separators
-  return validRelativeFiles.map((file) => path.resolve(targetDir, file));
+  return validRelativeFiles.sort().map((file) => path.resolve(targetDir, file));
 }

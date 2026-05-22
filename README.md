@@ -126,13 +126,13 @@ You can also create a `.geraphignore` file in your project root (using the same 
 
 ## Team setup
 
-For small to medium-sized projects, we recommend committing the `.geraph/` folder to Git so everyone on the team starts with the same map.
+For small to medium-sized projects, we recommend committing the `.geraph/` folder to Git so everyone on the team starts with the same map and benefits from the shared file cache.
 
 1. **One person runs `geraph scan`** and commits `.geraph/`.
 2. **Everyone pulls** — their assistant reads the graph immediately.
 3. **Run `geraph scan` after changes** to keep the architectural memory fresh.
 
-> **Note**: For large-scale projects, the graph data can become quite large. In these cases, it is **not recommended** to share the `.geraph/` folder via version control.
+> **Note**: For large codebases, the `.geraph/cache/` folder can grow significantly. In these cases, you can add `.geraph/cache/` to your `.gitignore` to keep the repository small while still sharing the lightweight `graph.json` mapping file. Alternatively, for very large projects, you can skip committing the entire `.geraph/` directory altogether.
 
 ---
 

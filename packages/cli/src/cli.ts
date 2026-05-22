@@ -2,19 +2,12 @@ import { Command } from "commander";
 import chalk from "chalk";
 import ora from "ora";
 import path from "path";
-import { availableParallelism } from "os";
-import { fileURLToPath } from "url";
-import { Worker } from "worker_threads";
 import { scanDirectory } from "./core/scanner.js";
+import { extractAst } from "./core/ast.js";
 import { createKnowledgeGraph, resolveCallGraph } from "./core/graph.js";
 import { enrichWithGit } from "./core/git.js";
 import { analyzeGraph } from "./core/analyze.js";
-import {
-  WorkerMessage,
-  WorkerTask,
-  AliasMap,
-  PathAlias,
-} from "./core/types.js";
+import { buildAliasMap } from "./core/alias.js";
 import {
   exportGraphJson,
   exportReportMarkdown,
@@ -23,97 +16,12 @@ import {
 import { installGeraph, uninstallGeraph, PLATFORMS } from "./core/install.js";
 import fs from "fs";
 
-function parseTsConfig(
-  filePath: string,
-  visited = new Set<string>(),
-): Record<string, unknown> {
-  if (visited.has(filePath)) return {};
-  visited.add(filePath);
-
-  if (!fs.existsSync(filePath)) return {};
-  try {
-    const content = fs.readFileSync(filePath, "utf-8");
-    const stripped = content.replace(
-      /\\"|"(?:\\"|[^"])*"|(\/\/.*|\/\*[\s\S]*?\*\/)/g,
-      (m, g) => (g ? "" : m),
-    );
-    const cleanJson = stripped.replace(/,\s*([\]}])/g, "$1");
-    const json = JSON.parse(cleanJson) as Record<string, unknown>;
-
-    let base: Record<string, unknown> = {};
-    if (json.extends) {
-      const extendsPaths = Array.isArray(json.extends)
-        ? json.extends
-        : [json.extends];
-      for (const extPath of extendsPaths as string[]) {
-        let resolvedExtPath = path.resolve(path.dirname(filePath), extPath);
-        if (
-          !fs.existsSync(resolvedExtPath) &&
-          !resolvedExtPath.endsWith(".json")
-        ) {
-          resolvedExtPath += ".json";
-        }
-        const extConfig = parseTsConfig(resolvedExtPath, visited);
-        base = mergeConfigs(base, extConfig);
-      }
-    }
-    return mergeConfigs(base, json);
-  } catch {
-    return {};
-  }
-}
-
-function mergeConfigs(
-  base: Record<string, unknown>,
-  child: Record<string, unknown>,
-): Record<string, unknown> {
-  return {
-    ...base,
-    ...child,
-    compilerOptions: {
-      ...((base.compilerOptions as Record<string, unknown>) || {}),
-      ...((child.compilerOptions as Record<string, unknown>) || {}),
-    },
-  };
-}
-
-function buildAliasMap(files: string[]): AliasMap {
-  const map: AliasMap = {};
-  const configFiles = files.filter(
-    (f) => f.endsWith("tsconfig.json") || f.endsWith("jsconfig.json"),
-  );
-
-  for (const file of configFiles) {
-    const config = parseTsConfig(file);
-    const compilerOptions = config.compilerOptions as
-      | { paths?: Record<string, string[]>; baseUrl?: string }
-      | undefined;
-    if (compilerOptions && compilerOptions.paths) {
-      const baseUrl = compilerOptions.baseUrl || ".";
-      const dir = path.dirname(file);
-      const aliases: PathAlias[] = [];
-      for (const [key, targets] of Object.entries(compilerOptions.paths)) {
-        const prefix = key.replace(/\*$/, "");
-        const resolvedTargets = targets.map((t: string) =>
-          path.join(dir, baseUrl, t.replace(/\*$/, "")),
-        );
-        aliases.push({ prefix, targets: resolvedTargets });
-      }
-      aliases.sort((a, b) => b.prefix.length - a.prefix.length);
-      if (aliases.length > 0) {
-        map[dir] = aliases;
-      }
-    }
-  }
-  return map;
-}
-
 export const program = new Command();
 
 program
   .name("geraph")
   .description(chalk.blue("Geraph: Structural memory for AI agents"))
-  .version("0.0.0", "-v, --version", "output the current version");
+  .version("0.3.0", "-v, --version", "output the current version");
 
 program
   .command("scan")
@@ -157,84 +65,7 @@ program
       const aliasMap = buildAliasMap(files);
 
       // Phase 4: AST Parsing
-      // Optimization: Using Worker Threads to utilize all CPU cores and prevent main-thread freeze.
-      spinner.text = chalk.gray(`Parsing AST for ${files.length} files...`);
-
-      const numWorkers = Math.min(availableParallelism(), files.length);
-      const workerPath = path.join(
-        path.dirname(fileURLToPath(import.meta.url)),
-        "core",
-        "worker.js",
-      );
-
-      let parsedCount = 0;
-      const workers = Array.from(
-        { length: numWorkers },
-        () => new Worker(workerPath),
-      );
-      const queue = [...files];
-
-      await Promise.all(
-        workers.map(async (worker) => {
-          while (queue.length > 0) {
-            const file = queue.shift();
-            if (!file) break;
-
-            await new Promise<void>((resolve) => {
-              const onMessage = (msg: WorkerMessage) => {
-                if (msg.error) {
-                  console.error(
-                    chalk.yellow(
-                      `\n\u26A0\u3000Worker error for ${file}: ${msg.error}`,
-                    ),
-                  );
-                } else {
-                  msg.nodes?.forEach((n) => {
-                    if (!graph.hasNode(n.id)) {
-                      graph.addNode(n.id, n.attr);
-                    } else if (n.attr.type !== "file") {
-                      // Update attributes if it's not a file (it might have been a ghost node)
-                      graph.mergeNodeAttributes(n.id, n.attr);
-                    }
-                  });
-                  msg.edges?.forEach((e) => {
-                    if (!graph.hasEdge(e.source, e.target)) {
-                      graph.addEdge(e.source, e.target, e.attr);
-                    }
-                  });
-                }
-                parsedCount++;
-                spinner.text = chalk.gray(
-                  `Parsing AST: ${parsedCount}/${files.length} files...`,
-                );
-                worker.off("message", onMessage);
-                worker.off("error", onError);
-                resolve();
-              };
-
-              const onError = (err: Error) => {
-                console.error(
-                  chalk.red(`Worker error on ${file}: ${err.message}`),
-                );
-                parsedCount++;
-                worker.off("message", onMessage);
-                worker.off("error", onError);
-                resolve();
-              };
-
-              worker.on("message", onMessage);
-              worker.on("error", onError);
-              worker.postMessage({
-                filePath: file,
-                projectRoot: targetDir,
-                aliasMap,
-              } as WorkerTask);
-            });
-          }
-          // Terminate worker when its part of the queue is empty
-          await worker.terminate();
-        }),
-      );
+      await extractAst(files, graph, targetDir, aliasMap, spinner);
 
       spinner.text = chalk.gray("Resolving call graph...");
       // Merges unresolved_fn ghost nodes into real defined functions,

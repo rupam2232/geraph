@@ -1,18 +1,11 @@
-/**
- * Graph Analysis Engine
- *
- * Computes structural metrics on the Knowledge Graph:
- * - God Nodes:  highest-degree real entities (the architectural pillars)
- * - Community Detection:  Louvain clustering to group related nodes
- * - Surprising Connections:  edges that bridge different communities
- * - Cohesion Scores:  density ratio per community
- */
-
 import { MultiDirectedGraph } from "graphology";
 import louvain from "graphology-communities-louvain";
 import type { NodeData, EdgeData } from "./graph.js";
 
-type LouvainAlgorithm = (graph: MultiDirectedGraph<NodeData, EdgeData>) => Record<string, number>;
+type LouvainAlgorithm = (
+  graph: MultiDirectedGraph<NodeData, EdgeData>,
+  options?: { rng?: () => number },
+) => Record<string, number>;
 const louvainAlgorithm = louvain as unknown as LouvainAlgorithm;
 
 export interface GodNode {
@@ -101,8 +94,15 @@ export function detectCommunities(
 
   let communityMap: Record<string, number> = {};
 
+  // Simple deterministic pseudo-random number generator (LCG)
+  let seed = 123456789;
+  const rng = () => {
+    seed = (seed * 9301 + 49297) % 233280;
+    return seed / 233280;
+  };
+
   try {
-    communityMap = louvainAlgorithm(graph);
+    communityMap = louvainAlgorithm(graph, { rng });
   } catch {
     graph.forEachNode((nodeId) => {
       communityMap[nodeId] = 0;
