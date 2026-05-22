@@ -6,6 +6,8 @@ Geraph maps your entire projectâ€”files, functions, classes, and relationshipsâ€
 
 ## Quick Start
 
+**Prerequisite:** Node.js `>=18.14.0` is required.
+
 Run the following commands to install geraph cli, platform specific rules and build the graph:
 
 ```bash

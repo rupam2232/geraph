@@ -15,6 +15,9 @@ Geraph maps your entire codebase (code, relationships, and history) into a struc
 Works in Google Antigravity, Claude Code, Cursor, VS Code Copilot Chat, and GitHub Copilot CLI.
 
 ## Installation & Setup
+
+**Prerequisite:** Node.js `>=18.14.0` is required.
+
 Run the following commands to install geraph cli, platform specific rules and build the graph:
 
 ```bash
