@@ -1,7 +1,7 @@
 import { parentPort } from "worker_threads";
 import { MultiDirectedGraph } from "graphology";
 import { NodeData, EdgeData } from "./graph.js";
-import { WorkerMessage, WorkerNode, WorkerEdge } from "./types.js";
+import { WorkerMessage, WorkerNode, WorkerEdge, WorkerTask } from "./types.js";
 import path from "path";
 import { parseTypeScript } from "../parsers/typescript.js";
 import { parseJson } from "../parsers/json.js";
@@ -13,8 +13,20 @@ const MEDIA_EXTS = new Set([
   "mp4", "webm", "mp3", "wav"
 ]);
 
-parentPort?.on("message", async (msg: { filePath: string }) => {
-  const { filePath } = msg;
+function getContextualAliases(filePath: string, aliasMap: import("./types.js").AliasMap): import("./types.js").PathAlias[] {
+  let current = path.dirname(filePath);
+  while (current) {
+    const aliases = aliasMap[current];
+    if (aliases) return aliases;
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  return [];
+}
+
+parentPort?.on("message", async (msg: WorkerTask) => {
+  const { filePath, aliasMap } = msg;
   const localGraph = new MultiDirectedGraph<NodeData, EdgeData>();
 
   try {
@@ -32,7 +44,8 @@ parentPort?.on("message", async (msg: { filePath: string }) => {
     const ext = filePath.split(".").pop()?.toLowerCase() || "";
 
     if (ext === "ts" || ext === "js" || ext === "tsx" || ext === "jsx") {
-      parseTypeScript(filePath, localGraph);
+      const aliases = getContextualAliases(filePath, aliasMap || {});
+      parseTypeScript(filePath, localGraph, aliases);
     } else if (ext === "json") {
       parseJson(filePath, localGraph);
     } else if (ext === "md") {

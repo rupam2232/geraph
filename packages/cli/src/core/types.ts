@@ -11,8 +11,21 @@ export interface WorkerEdge {
   attr: EdgeData;
 }
 
+export interface PathAlias {
+  prefix: string;
+  targets: string[];
+}
+
+export type AliasMap = Record<string, PathAlias[]>;
+
 export interface WorkerMessage {
   nodes?: WorkerNode[];
   edges?: WorkerEdge[];
   error?: string;
+}
+
+export interface WorkerTask {
+  filePath: string;
+  projectRoot: string;
+  aliasMap: AliasMap;
 }

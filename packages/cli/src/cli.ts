@@ -9,7 +9,12 @@ import { scanDirectory } from "./core/scanner.js";
 import { createKnowledgeGraph, resolveCallGraph } from "./core/graph.js";
 import { enrichWithGit } from "./core/git.js";
 import { analyzeGraph } from "./core/analyze.js";
-import { WorkerMessage } from "./core/types.js";
+import {
+  WorkerMessage,
+  WorkerTask,
+  AliasMap,
+  PathAlias,
+} from "./core/types.js";
 import {
   exportGraphJson,
   exportReportMarkdown,
@@ -17,6 +22,91 @@ import {
 } from "./core/serializer.js";
 import { installGeraph, uninstallGeraph, PLATFORMS } from "./core/install.js";
 import fs from "fs";
+
+function parseTsConfig(
+  filePath: string,
+  visited = new Set<string>(),
+): Record<string, unknown> {
+  if (visited.has(filePath)) return {};
+  visited.add(filePath);
+
+  if (!fs.existsSync(filePath)) return {};
+  try {
+    const content = fs.readFileSync(filePath, "utf-8");
+    const stripped = content.replace(
+      /\\"|"(?:\\"|[^"])*"|(\/\/.*|\/\*[\s\S]*?\*\/)/g,
+      (m, g) => (g ? "" : m),
+    );
+    const cleanJson = stripped.replace(/,\s*([\]}])/g, "$1");
+    const json = JSON.parse(cleanJson) as Record<string, unknown>;
+
+    let base: Record<string, unknown> = {};
+    if (json.extends) {
+      const extendsPaths = Array.isArray(json.extends)
+        ? json.extends
+        : [json.extends];
+      for (const extPath of extendsPaths as string[]) {
+        let resolvedExtPath = path.resolve(path.dirname(filePath), extPath);
+        if (
+          !fs.existsSync(resolvedExtPath) &&
+          !resolvedExtPath.endsWith(".json")
+        ) {
+          resolvedExtPath += ".json";
+        }
+        const extConfig = parseTsConfig(resolvedExtPath, visited);
+        base = mergeConfigs(base, extConfig);
+      }
+    }
+    return mergeConfigs(base, json);
+  } catch {
+    return {};
+  }
+}
+
+function mergeConfigs(
+  base: Record<string, unknown>,
+  child: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    ...base,
+    ...child,
+    compilerOptions: {
+      ...((base.compilerOptions as Record<string, unknown>) || {}),
+      ...((child.compilerOptions as Record<string, unknown>) || {}),
+    },
+  };
+}
+
+function buildAliasMap(files: string[]): AliasMap {
+  const map: AliasMap = {};
+  const configFiles = files.filter(
+    (f) => f.endsWith("tsconfig.json") || f.endsWith("jsconfig.json"),
+  );
+
+  for (const file of configFiles) {
+    const config = parseTsConfig(file);
+    const compilerOptions = config.compilerOptions as
+      | { paths?: Record<string, string[]>; baseUrl?: string }
+      | undefined;
+    if (compilerOptions && compilerOptions.paths) {
+      const baseUrl = compilerOptions.baseUrl || ".";
+      const dir = path.dirname(file);
+      const aliases: PathAlias[] = [];
+      for (const [key, targets] of Object.entries(compilerOptions.paths)) {
+        const prefix = key.replace(/\*$/, "");
+        const resolvedTargets = targets.map((t: string) =>
+          path.join(dir, baseUrl, t.replace(/\*$/, "")),
+        );
+        aliases.push({ prefix, targets: resolvedTargets });
+      }
+      aliases.sort((a, b) => b.prefix.length - a.prefix.length);
+      if (aliases.length > 0) {
+        map[dir] = aliases;
+      }
+    }
+  }
+  return map;
+}
 
 export const program = new Command();
 
@@ -65,7 +155,11 @@ program
         }
       }
 
-      // Phase 4: AST Parsing
+      // Phase 4: Path Aliasing
+      spinner.text = chalk.gray("Mapping path aliases...");
+      const aliasMap = buildAliasMap(files);
+
+      // Phase 5: AST Parsing
       // Optimization: Using Worker Threads to utilize all CPU cores and prevent main-thread freeze.
       spinner.text = chalk.gray(`Parsing AST for ${files.length} files...`);
 
@@ -133,7 +227,11 @@ program
 
               worker.on("message", onMessage);
               worker.on("error", onError);
-              worker.postMessage({ filePath: file });
+              worker.postMessage({
+                filePath: file,
+                projectRoot: targetDir,
+                aliasMap,
+              } as WorkerTask);
             });
           }
           // Terminate worker when its part of the queue is empty
@@ -313,7 +411,10 @@ program
 program
   .command("search <term>")
   .description("Discover multiple nodes matching a partial term")
-  .option("-t, --type <type>", "Filter results by node type (e.g., 'interface', 'class', 'function', 'file')")
+  .option(
+    "-t, --type <type>",
+    "Filter results by node type (e.g., 'interface', 'class', 'function', 'file')",
+  )
   .action(async (term, options) => {
     const spinner = ora({
       text: chalk.gray(`Searching graph for: ${term}...`),
@@ -331,7 +432,11 @@ program
         console.error(chalk.yellow(`No nodes found matching '${term}'`));
       } else {
         console.log(JSON.stringify(results, null, 2));
-        console.error(chalk.gray(`\nFound ${results.length} nodes. Use 'geraph query <id>' to inspect a specific node.`));
+        console.error(
+          chalk.gray(
+            `\nFound ${results.length} nodes. Use 'geraph query <id>' to inspect a specific node.`,
+          ),
+        );
       }
     } catch (error) {
       spinner.stop();
@@ -345,9 +450,17 @@ program
 
 program
   .command("query <symbol>")
-  .description("Query the knowledge graph for a specific symbol's relationships")
-  .option("-t, --type <type>", "Filter results by node type (e.g., 'interface', 'class', 'function', 'file')")
-  .option("-s, --source <path>", "Filter results by source file path (e.g., 'auth.ts')")
+  .description(
+    "Query the knowledge graph for a specific symbol's relationships",
+  )
+  .option(
+    "-t, --type <type>",
+    "Filter results by node type (e.g., 'interface', 'class', 'function', 'file')",
+  )
+  .option(
+    "-s, --source <path>",
+    "Filter results by source file path (e.g., 'auth.ts')",
+  )
   .action(async (symbol, options) => {
     const spinner = ora({
       text: chalk.gray(`Querying relationships for: ${symbol}...`),
@@ -356,7 +469,12 @@ program
     }).start();
     try {
       const { queryGraph } = await import("./core/query.js");
-      const result = await queryGraph(process.cwd(), symbol, options.type, options.source);
+      const result = await queryGraph(
+        process.cwd(),
+        symbol,
+        options.type,
+        options.source,
+      );
       spinner.stop();
       console.log(JSON.stringify(result, null, 2));
     } catch (error) {

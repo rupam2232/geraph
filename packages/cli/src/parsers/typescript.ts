@@ -22,31 +22,52 @@ const BUILT_INS = new Set([
   "postMessage", "terminate", "info", "warn", "error", "debug", "succeed", "fail", "start", "stop", "command", "option", "action", "description", "parse", "version"
 ]);
 
-function resolveImportToNode(importPath: string, sourceFilePath: string): string | null {
-  if (!importPath.startsWith(".")) return null;
-  const sourceDir = path.dirname(sourceFilePath);
+function resolveImportToNode(importPath: string, sourceFilePath: string, aliases: import("../core/types.js").PathAlias[] = []): string | null {
+  const checkCandidates = (resolvedBase: string) => {
+    const candidates: string[] = [
+      resolvedBase + ".ts",
+      resolvedBase + ".tsx",
+      resolvedBase + "/index.ts",
+      resolvedBase + "/index.tsx",
+      resolvedBase + ".js",
+      resolvedBase + ".jsx",
+      resolvedBase + "/index.js",
+      resolvedBase + "/index.jsx",
+    ];
+    for (const candidate of candidates) {
+      if (fs.existsSync(candidate)) return candidate;
+    }
+    return null;
+  };
+
   const normalizedImport = importPath.replace(/\.js$/, "");
-  const resolvedBase = path.resolve(sourceDir, normalizedImport);
-  
-  const candidates: string[] = [
-    resolvedBase + ".ts",
-    resolvedBase + ".tsx",
-    resolvedBase + "/index.ts",
-    resolvedBase + "/index.tsx",
-    resolvedBase + ".js",
-    resolvedBase + ".jsx",
-    resolvedBase + "/index.js",
-    resolvedBase + "/index.jsx",
-  ];
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) return candidate;
+
+  if (importPath.startsWith(".")) {
+    const sourceDir = path.dirname(sourceFilePath);
+    const resolvedBase = path.resolve(sourceDir, normalizedImport);
+    return checkCandidates(resolvedBase);
   }
+
+  if (aliases && aliases.length > 0) {
+    for (const alias of aliases) {
+      if (importPath.startsWith(alias.prefix)) {
+        const remainder = normalizedImport.slice(alias.prefix.length);
+        for (const target of alias.targets) {
+          const resolvedBase = path.join(target, remainder);
+          const found = checkCandidates(resolvedBase);
+          if (found) return found;
+        }
+      }
+    }
+  }
+
   return null;
 }
 
 export function parseTypeScript(
   filePath: string,
   graph: MultiDirectedGraph<NodeData, EdgeData>,
+  aliases: import("../core/types.js").PathAlias[] = []
 ) {
   const isTs = filePath.endsWith(".ts") || filePath.endsWith(".tsx");
   const isTsx = filePath.endsWith(".tsx");
@@ -217,7 +238,7 @@ export function parseTypeScript(
 
         if (!importPath.startsWith(".") && !importPath.startsWith("/") && (NODE_CORE_MODULES.has(normalizedPath) || NODE_CORE_MODULES.has(rootModule))) continue;
 
-        const resolvedId = resolveImportToNode(importPath, filePath);
+        const resolvedId = resolveImportToNode(importPath, filePath, aliases);
         const targetNodeId = resolvedId || `import::${importPath}`;
 
         if (!graph.hasNode(targetNodeId)) {
@@ -305,7 +326,7 @@ export function parseTypeScript(
             for (const link of jsdoc.links) {
                 let targetPath = link;
                 if (link.startsWith(".")) {
-                    targetPath = resolveImportToNode(link, filePath) || link;
+                    targetPath = resolveImportToNode(link, filePath, aliases) || link;
                 }
                 
                 if (!graph.hasNode(targetPath)) {
@@ -344,7 +365,7 @@ export function parseTypeScript(
         if (localDefinitions.has(referencedTypeName)) {
             targetId = `${filePath}::${referencedTypeName}`;
         } else if (importSource) {
-            const resolvedSource = resolveImportToNode(importSource, filePath) || importSource;
+            const resolvedSource = resolveImportToNode(importSource, filePath, aliases) || importSource;
             targetId = `${resolvedSource}::${referencedTypeName}`;
         } else {
             targetId = `unresolved::${referencedTypeName}`;
@@ -356,7 +377,7 @@ export function parseTypeScript(
           graph.addNode(targetId, {
             type: "interface",
             name: referencedTypeName,
-            file: (importSource && resolveImportToNode(importSource, filePath)) || importSource || filePath,
+            file: (importSource && resolveImportToNode(importSource, filePath, aliases)) || importSource || filePath,
             startLine: 0,
             metadata: { 
                 external: !!importSource, 
@@ -373,8 +394,8 @@ export function parseTypeScript(
         }
 
         if (importSource) {
-            const resolvedSource = resolveImportToNode(importSource, filePath) || importSource;
-            const importNodeId = resolveImportToNode(importSource, filePath) || `import::${importSource}`;
+            const resolvedSource = resolveImportToNode(importSource, filePath, aliases) || importSource;
+            const importNodeId = resolveImportToNode(importSource, filePath, aliases) || `import::${importSource}`;
             if (!graph.hasNode(importNodeId)) {
                 graph.addNode(importNodeId, { type: "file", name: importSource, file: resolvedSource, startLine: 0, metadata: { external: true } });
             }
@@ -417,7 +438,7 @@ export function parseTypeScript(
         if (localDefinitions.has(baseName)) {
             symId = `${filePath}::${calledName}`;
         } else if (importSource) {
-            const resolvedSource = resolveImportToNode(importSource, filePath) || importSource;
+            const resolvedSource = resolveImportToNode(importSource, filePath, aliases) || importSource;
             symId = `${resolvedSource}::${calledName}`;
         } else {
             symId = `unresolved::${calledName}`;
@@ -427,7 +448,7 @@ export function parseTypeScript(
 
         if (!graph.hasNode(symId)) {
           const callLine = node.startPosition.row + 1;
-          const resolvedSource = (importSource && resolveImportToNode(importSource, filePath)) || importSource;
+          const resolvedSource = (importSource && resolveImportToNode(importSource, filePath, aliases)) || importSource;
           graph.addNode(symId, {
             type: (name === "constructor_name" ? "class" : "function"),
             name: calledName,
@@ -449,8 +470,8 @@ export function parseTypeScript(
         }
 
         if (importSource) {
-          const resolvedSource = resolveImportToNode(importSource, filePath) || importSource;
-          const importNodeId = resolveImportToNode(importSource, filePath) || `import::${importSource}`;
+          const resolvedSource = resolveImportToNode(importSource, filePath, aliases) || importSource;
+          const importNodeId = resolveImportToNode(importSource, filePath, aliases) || `import::${importSource}`;
           if (!graph.hasNode(importNodeId)) {
             graph.addNode(importNodeId, {
               type: "file",
