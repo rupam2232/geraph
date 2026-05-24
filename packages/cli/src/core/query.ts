@@ -13,20 +13,34 @@ export interface QueryResultNode {
   links?: { incoming: number; outgoing: number };
 }
 
+export interface PaginationMeta {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
 export interface QueryResult {
   target: QueryResultNode;
   incoming: Array<{ source: QueryResultNode; relation: string; confidence: string }>;
   outgoing: Array<{ target: QueryResultNode; relation: string; confidence: string }>;
+  meta: {
+    page: number;
+    limit: number;
+    totalIncoming: number;
+    totalOutgoing: number;
+    totalPages: number;
+  };
 }
 
 function normalizeId(id: string): string {
   return id.replace(/\\/g, "/");
 }
 
-function loadGraph(targetDir: string): MultiDirectedGraph<NodeData, EdgeData> {
+export function loadGraph(targetDir: string): MultiDirectedGraph<NodeData, EdgeData> {
   const graphPath = path.join(targetDir, ".geraph", "graph.json");
   if (!fs.existsSync(graphPath)) {
-    throw new Error("Graph data not found. Run 'geraph scan' first.");
+    throw new Error(`Graph data not found in ${targetDir}. Run 'geraph scan' first.`);
   }
 
   const rawData = JSON.parse(fs.readFileSync(graphPath, "utf-8"));
@@ -75,12 +89,19 @@ export interface SearchResultNode {
   links: number;
 }
 
+export interface PaginatedSearchResult {
+  data: SearchResultNode[];
+  meta: PaginationMeta;
+}
+
 export async function searchGraph(
-  targetDir: string,
+  targetDirOrGraph: string | MultiDirectedGraph<NodeData, EdgeData>,
   term: string,
-  targetType?: string
-): Promise<SearchResultNode[]> {
-  const graph = loadGraph(targetDir);
+  targetType?: string,
+  page: number = 1,
+  limit: number = 20
+): Promise<PaginatedSearchResult> {
+  const graph = typeof targetDirOrGraph === "string" ? loadGraph(targetDirOrGraph) : targetDirOrGraph;
   const lowerTerm = term.toLowerCase();
   
   const results: SearchResultNode[] = [];
@@ -101,16 +122,33 @@ export async function searchGraph(
   });
 
   // Sort by number of connections (most important nodes first)
-  return results.sort((a, b) => b.links - a.links);
+  results.sort((a, b) => b.links - a.links);
+
+  const total = results.length;
+  const totalPages = Math.ceil(total / limit) || 1;
+  const start = (page - 1) * limit;
+  const end = start + limit;
+  
+  return {
+    data: results.slice(start, end),
+    meta: {
+      page,
+      limit,
+      total,
+      totalPages
+    }
+  };
 }
 
 export async function queryGraph(
-  targetDir: string,
+  targetDirOrGraph: string | MultiDirectedGraph<NodeData, EdgeData>,
   symbol: string,
   targetType?: string,
-  targetSource?: string
+  targetSource?: string,
+  page: number = 1,
+  limit: number = 20
 ): Promise<QueryResult> {
-  const graph = loadGraph(targetDir);
+  const graph = typeof targetDirOrGraph === "string" ? loadGraph(targetDirOrGraph) : targetDirOrGraph;
 
   // Find node by exact ID first, then fuzzy match name
   const normSymbol = normalizeId(symbol);
@@ -182,6 +220,13 @@ export async function queryGraph(
     },
     incoming: [],
     outgoing: [],
+    meta: {
+      page,
+      limit,
+      totalIncoming: 0,
+      totalOutgoing: 0,
+      totalPages: 1
+    }
   };
 
   const collectEdges = (nodeId: string, isOutgoing: boolean, seenKeys: Set<string>) => {
@@ -230,6 +275,41 @@ export async function queryGraph(
   // This ensures 100% parity with the HTML graph visualization.
   collectEdges(targetNodeId, false, seenIn);
   collectEdges(targetNodeId, true, seenOut);
+
+  // Sorting Logic: intents first, then degree descending
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sortEdges = (a: any, b: any) => {
+    const nodeA = a.source || a.target;
+    const nodeB = b.source || b.target;
+    if (nodeA.type === 'intent' && nodeB.type !== 'intent') return -1;
+    if (nodeB.type === 'intent' && nodeA.type !== 'intent') return 1;
+    
+    const degreeA = graph.degree(nodeA.id) || 0;
+    const degreeB = graph.degree(nodeB.id) || 0;
+    return degreeB - degreeA;
+  };
+
+  result.incoming.sort(sortEdges);
+  result.outgoing.sort(sortEdges);
+
+  const totalIncoming = result.incoming.length;
+  const totalOutgoing = result.outgoing.length;
+  const maxTotal = Math.max(totalIncoming, totalOutgoing);
+  const totalPages = Math.ceil(maxTotal / limit) || 1;
+
+  const start = (page - 1) * limit;
+  const end = start + limit;
+
+  result.incoming = result.incoming.slice(start, end);
+  result.outgoing = result.outgoing.slice(start, end);
+
+  result.meta = {
+    page,
+    limit,
+    totalIncoming,
+    totalOutgoing,
+    totalPages
+  };
 
   return result;
 }

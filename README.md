@@ -113,6 +113,56 @@ geraph uninstall [platform]                    # remove geraph rules from a proj
 **Options for Search & Query:**
 - `--type <type>`: Filter results by node type (e.g., `interface`, `class`, `function`, `file`).
 - `--source <file>`: (*Query only*) Filter results by the source file path to resolve ambiguous symbols.
+- `-p, --page <number>` / `-l, --limit <number>`: Paginate through large result sets.
+
+---
+
+## MCP Server (Recommended)
+
+Geraph features a fully local Model Context Protocol (MCP) server that operates completely over `stdio`. **Using the MCP server is highly recommended** over running terminal CLI commands for LLMs, as it is faster, strictly typed, and avoids terminal parsing bugs.
+
+To expose the Geraph AST memory to an MCP-compatible client (like Cursor or Antigravity IDE), add the following configuration snippet:
+
+**For a project-level local setup:**
+```json
+{
+  "mcpServers": {
+    "geraph": {
+      "command": "geraph",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+**For a global setup:**
+If you configure the MCP server globally for your IDE, you must tell the server where your project is located. You can do this by setting the `cwd` field to your project path. If your IDE/platform doesn't support the `cwd` field, you can pass the project path as an argument instead:
+
+```json
+{
+  "mcpServers": {
+    "geraph": {
+      "command": "geraph",
+      "args": [
+        "mcp"
+      ],
+      "cwd": "<path-to-your-project>"
+    }
+  }
+}
+// if cwd not supported
+{
+  "mcpServers": {
+    "geraph": {
+      "command": "geraph",
+      "args": [
+        "mcp",
+        "<path-to-your-project>"
+      ]
+    }
+  }
+}
+```
 
 ---
 
@@ -139,5 +189,6 @@ For small to medium-sized projects, we recommend committing the `.geraph/` folde
 ## Privacy
 
 - **Local Extraction**: All parsing (AST) and graph building happens entirely on your local machine.
+- **Offline MCP Server**: The MCP server reads the generated `.geraph/graph.json` offline, meaning **your code never leaves your system**. There are no API keys or cloud processing.
 - **Zero Cloud**: Your code never leaves your system. Everything happens inside your machine fully locally. No code, snippets, or metadata are ever sent to a server. There is no Geraph server.
 - **No Telemetry**: No usage tracking, no analytics.

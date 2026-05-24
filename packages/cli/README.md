@@ -29,6 +29,53 @@ geraph scan
 - **History Aware**: Integrates Git history to explain the "Why" behind the code.
 - **100% Local & Private**: No cloud, no telemetry, no code leaves your machine.
 
+## MCP Server (Recommended)
+
+Geraph features a fully local Model Context Protocol (MCP) server that operates completely over `stdio`. **Using the MCP server is highly recommended** over running terminal CLI commands for LLMs.
+
+**For a project-level local setup:**
+Add the following configuration to your MCP-compatible client (e.g. Cursor or Antigravity IDE):
+
+```json
+{
+  "mcpServers": {
+    "geraph": {
+      "command": "geraph",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+**For a global setup:**
+If you configure the MCP server globally for your IDE, you must set the `cwd` field to your project path. If your IDE doesn't support the `cwd` field, you can pass the project path as an argument instead:
+
+```json
+{
+  "mcpServers": {
+    "geraph": {
+      "command": "geraph",
+      "args": [
+        "mcp"
+      ],
+      "cwd": "<path-to-your-project>"
+    }
+  }
+}
+// if cwd not supported
+{
+  "mcpServers": {
+    "geraph": {
+      "command": "geraph",
+      "args": [
+        "mcp",
+        "<path-to-your-project>"
+      ]
+    }
+  }
+}
+```
+
 ## Detailed Documentation
 
 For a full guide on workflows, agent integration, and advanced features, visit the **[Main Project Documentation](https://github.com/rupam2232/geraph)**.

@@ -243,6 +243,8 @@ program
     "-t, --type <type>",
     "Filter results by node type (e.g., 'interface', 'class', 'function', 'file')",
   )
+  .option("-p, --page <number>", "Page number for pagination", "1")
+  .option("-l, --limit <number>", "Number of results per page", "20")
   .action(async (term, options) => {
     const spinner = ora({
       text: chalk.gray(`Searching graph for: ${term}...`),
@@ -251,25 +253,32 @@ program
     }).start();
     try {
       const { searchGraph } = await import("./core/query.js");
-      const results = await searchGraph(process.cwd(), term, options.type);
+      const results = await searchGraph(
+        process.cwd(),
+        term,
+        options.type,
+        Number(options.page),
+        Number(options.limit),
+      );
       spinner.stop();
-      if (results.length === 0) {
-        // Use console.error for all human-readable text instead of console.log.
-        // This guarantees that stdout contains ONLY pure JSON data.
-        // This allows AI Agents to cleanly redirect output (e.g. `> .geraph/out.json`) without corrupting the JSON.
-        console.error(chalk.yellow(`No nodes found matching '${term}'`));
+      if (results.data.length === 0) {
+        console.error(
+          chalk.yellow(
+            `No nodes found matching '${term}' on page ${options.page}`,
+          ),
+        );
       } else {
         console.log(JSON.stringify(results, null, 2));
         console.error(
           chalk.gray(
-            `\nFound ${results.length} nodes. Use 'geraph query <id>' to inspect a specific node.`,
+            `\nFound ${results.meta.total} nodes across ${results.meta.totalPages} pages. Displaying page ${results.meta.page}.`,
           ),
         );
       }
     } catch (error) {
       spinner.stop();
       console.error(
-        chalk.red("?? Search failed:"),
+        chalk.red("❌ Search failed:"),
         error instanceof Error ? error.message : String(error),
       );
       process.exit(1);
@@ -289,6 +298,8 @@ program
     "-s, --source <path>",
     "Filter results by source file path (e.g., 'auth.ts')",
   )
+  .option("-p, --page <number>", "Page number for pagination", "1")
+  .option("-l, --limit <number>", "Number of results per page", "20")
   .action(async (symbol, options) => {
     const spinner = ora({
       text: chalk.gray(`Querying relationships for: ${symbol}...`),
@@ -302,6 +313,8 @@ program
         symbol,
         options.type,
         options.source,
+        Number(options.page),
+        Number(options.limit),
       );
       spinner.stop();
       console.log(JSON.stringify(result, null, 2));
@@ -311,6 +324,25 @@ program
           `Query failed: ${error instanceof Error ? error.message : String(error)}`,
         ),
       );
+      process.exit(1);
+    }
+  });
+
+program
+  .command("mcp [dir]")
+  .description(
+    "Starts the JSON-RPC Model Context Protocol (MCP) server over stdio",
+  )
+  .action(async (dir) => {
+    try {
+      const { loadGraph } = await import("./core/query.js");
+      const targetDir = dir ? path.resolve(process.cwd(), dir) : process.cwd();
+      const graph = loadGraph(targetDir);
+
+      const { runMcpServer } = await import("./core/mcp.js");
+      await runMcpServer(graph, targetDir);
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : String(err));
       process.exit(1);
     }
   });

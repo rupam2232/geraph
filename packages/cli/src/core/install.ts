@@ -14,10 +14,10 @@ Rules:
 - If running any \`geraph\` command returns 'command not found', you MUST install it globally using \`npm install -g geraph\` before proceeding.
 - Before answering architecture or codebase questions, read \`.geraph/GRAPH_REPORT.md\` for god nodes and community structure.
 - NEVER try to read the massive \`.geraph/graph.json\` file directly. It is for internal CLI use only.
-- For discovery, use \`geraph search '<term>' [--type <type>]\`.
-- For precise architecture navigation, use \`geraph query '<symbol>' [--type <type>] [--source <file>]\` instead of falling back to \`grep\`.
-- After modifying code files in this session, run \`geraph scan\` to keep the graph current.
-- NEVER use \`grep\`, \`rg\`, \`find\`, or any text-search tool for architecture questions when geraph is available. Always use \`geraph search\` or \`geraph query\` instead.
+- For discovery, use the \`search_graph\` MCP tool or \`geraph search '<term>' [--type <type>] [-p <page>] [-l <limit>]\`.
+- For precise architecture navigation, use the \`get_neighbors\` MCP tool or \`geraph query '<symbol>' [--type <type>] [--source <file>] [-p <page>] [-l <limit>]\` instead of falling back to \`grep\`.
+- After modifying code files in this session, run the \`scan_graph\` MCP tool or \`geraph scan\` to keep the graph current.
+- NEVER use \`grep\`, \`rg\`, \`find\`, or any text-search tool for architecture questions when geraph is available. Always use the MCP tools or CLI commands instead.
 - **NOTE**: There are NO extra or hidden options for these commands. DO NOT hallucinate flags. Only use the options explicitly mentioned here.
 
 [GLOBAL_POINTER]
@@ -33,12 +33,12 @@ After reading the report, answer using the graph context. Only read source files
 
 If running any \`geraph\` command returns a 'command not found' error, you MUST install it globally using \`npm install -g geraph\` before proceeding.
 
-NEVER attempt to read the massive \`.geraph/graph.json\` file directly. Use the CLI instead:
-- **Discover nodes**: \`geraph search '<term>' [--type <type>]\`
-- **Trace dependencies**: \`geraph query '<symbol>' [--type <type>] [--source <file>]\`
-- **Update graph**: \`geraph scan\`
+NEVER attempt to read the massive \`.geraph/graph.json\` file directly. Use the native MCP tools or CLI instead:
+- **Discover nodes**: \`search_graph\` MCP tool or \`geraph search '<term>' [--type <type>] [-p <page>] [-l <limit>]\`
+- **Trace dependencies**: \`get_neighbors\` MCP tool or \`geraph query '<symbol>' [--type <type>] [--source <file>] [-p <page>] [-l <limit>]\`
+- **Update graph**: \`scan_graph\` MCP tool or \`geraph scan\`
 
-NEVER use \`grep\`, \`rg\`, \`find\`, or any text-search tool for architecture questions when geraph is available. Always use \`geraph search\` or \`geraph query\` instead.
+NEVER use \`grep\`, \`rg\`, \`find\`, or any text-search tool for architecture questions when geraph is available. Always use the MCP tools or CLI commands instead.
 
 **NOTE**: There are NO extra or hidden options for these commands. DO NOT hallucinate flags. Only use the options explicitly mentioned here.
 
