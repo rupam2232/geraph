@@ -286,10 +286,45 @@ program
   });
 
 program
-  .command("query <symbol>")
-  .description(
-    "Query the knowledge graph for a specific symbol's relationships",
+  .command("node <symbol>")
+  .description("Fetch detailed metadata for a specific node")
+  .option(
+    "-t, --type <type>",
+    "Filter results by node type (e.g., 'interface', 'class', 'function', 'file')",
   )
+  .option(
+    "-s, --source <path>",
+    "Filter results by source file path (e.g., 'auth.ts')",
+  )
+  .action(async (symbol, options) => {
+    const spinner = ora({
+      text: chalk.gray(`Querying node: ${symbol}...`),
+      color: "blue",
+      spinner: "dots",
+    }).start();
+    try {
+      const { getNode } = await import("./core/query.js");
+      const result = await getNode(
+        process.cwd(),
+        symbol,
+        options.type,
+        options.source,
+      );
+      spinner.stop();
+      console.log(JSON.stringify(result, null, 2));
+    } catch (error) {
+      spinner.fail(
+        chalk.red(
+          `Query failed: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      );
+      process.exit(1);
+    }
+  });
+
+program
+  .command("neighbors <symbol>")
+  .description("Fetch all incoming and outgoing edges for a specific node")
   .option(
     "-t, --type <type>",
     "Filter results by node type (e.g., 'interface', 'class', 'function', 'file')",
@@ -299,16 +334,16 @@ program
     "Filter results by source file path (e.g., 'auth.ts')",
   )
   .option("-p, --page <number>", "Page number for pagination", "1")
-  .option("-l, --limit <number>", "Number of results per page", "20")
+  .option("-l, --limit <number>", "Number of edges per page", "20")
   .action(async (symbol, options) => {
     const spinner = ora({
-      text: chalk.gray(`Querying relationships for: ${symbol}...`),
+      text: chalk.gray(`Querying neighbors for: ${symbol}...`),
       color: "blue",
       spinner: "dots",
     }).start();
     try {
-      const { queryGraph } = await import("./core/query.js");
-      const result = await queryGraph(
+      const { getNeighbors } = await import("./core/query.js");
+      const result = await getNeighbors(
         process.cwd(),
         symbol,
         options.type,
@@ -322,6 +357,30 @@ program
       spinner.fail(
         chalk.red(
           `Query failed: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      );
+      process.exit(1);
+    }
+  });
+
+program
+  .command("path <sourceId> <targetId>")
+  .description("Find the shortest path between two exact node IDs")
+  .action(async (sourceId, targetId) => {
+    const spinner = ora({
+      text: chalk.gray(`Finding shortest path...`),
+      color: "blue",
+      spinner: "dots",
+    }).start();
+    try {
+      const { shortestPath } = await import("./core/query.js");
+      const result = await shortestPath(process.cwd(), sourceId, targetId);
+      spinner.stop();
+      console.log(result);
+    } catch (error) {
+      spinner.fail(
+        chalk.red(
+          `Path failed: ${error instanceof Error ? error.message : String(error)}`,
         ),
       );
       process.exit(1);

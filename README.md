@@ -42,7 +42,7 @@ That's it. You get three files:
 └── graph.json       the full graph — query it anytime for surgical code modifications
 ```
 
-Once the scan is complete, you can use the `/geraph` command in your AI assistant's chat to ask architectural questions or assign codebase-wide tasks. The assistant will utilize the `geraph query` command behind the scenes to fetch precise architectural context.
+Once the scan is complete, you can use the `/geraph` command in your AI assistant's chat to ask architectural questions or assign codebase-wide tasks. The assistant will utilize the `geraph node` and `geraph neighbors` commands behind the scenes to fetch precise architectural context.
 
 ---
 
@@ -105,7 +105,9 @@ AST extraction is done locally via tree-sitter.
 ```bash
 geraph scan                                    # build graph for the current folder
 geraph search '<term>' [--type <type>]         # discover multiple nodes matching a term
-geraph query '<symbol>' [--type <type>] [--source <file>] # instant lookup for a symbol's dependencies
+geraph node '<symbol>' [--type <type>] [--source <file>] # fetch metadata for a specific node
+geraph neighbors '<symbol>' [--type <type>] [--source <file>] # trace incoming/outgoing edges for a node
+geraph path '<source>' '<target>' # find the shortest path between two nodes
 geraph install [platform]                      # install geraph rules for a platform
 geraph uninstall [platform]                    # remove geraph rules from a project
 ```

@@ -15,7 +15,8 @@ Rules:
 - Before answering architecture or codebase questions, read \`.geraph/GRAPH_REPORT.md\` for god nodes and community structure.
 - NEVER try to read the massive \`.geraph/graph.json\` file directly. It is for internal CLI use only.
 - For discovery, use the \`search_graph\` MCP tool or \`geraph search '<term>' [--type <type>] [-p <page>] [-l <limit>]\`.
-- For precise architecture navigation, use the \`get_neighbors\` MCP tool or \`geraph query '<symbol>' [--type <type>] [--source <file>] [-p <page>] [-l <limit>]\` instead of falling back to \`grep\`.
+- For node metadata, use the \`get_node\` MCP tool or \`geraph node '<symbol>' [--type <type>] [--source <file>]\`.
+- For precise architecture navigation, use the \`get_neighbors\` MCP tool or \`geraph neighbors '<symbol>' [--type <type>] [--source <file>] [-p <page>] [-l <limit>]\` instead of falling back to \`grep\`.
 - After modifying code files in this session, run the \`scan_graph\` MCP tool or \`geraph scan\` to keep the graph current.
 - NEVER use \`grep\`, \`rg\`, \`find\`, or any text-search tool for architecture questions when geraph is available. Always use the MCP tools or CLI commands instead.
 - **NOTE**: There are NO extra or hidden options for these commands. DO NOT hallucinate flags. Only use the options explicitly mentioned here.
@@ -35,7 +36,8 @@ If running any \`geraph\` command returns a 'command not found' error, you MUST 
 
 NEVER attempt to read the massive \`.geraph/graph.json\` file directly. Use the native MCP tools or CLI instead:
 - **Discover nodes**: \`search_graph\` MCP tool or \`geraph search '<term>' [--type <type>] [-p <page>] [-l <limit>]\`
-- **Trace dependencies**: \`get_neighbors\` MCP tool or \`geraph query '<symbol>' [--type <type>] [--source <file>] [-p <page>] [-l <limit>]\`
+- **Node metadata**: \`get_node\` MCP tool or \`geraph node '<symbol>' [--type <type>] [--source <file>]\`
+- **Trace dependencies**: \`get_neighbors\` MCP tool or \`geraph neighbors '<symbol>' [--type <type>] [--source <file>] [-p <page>] [-l <limit>]\`
 - **Update graph**: \`scan_graph\` MCP tool or \`geraph scan\`
 
 NEVER use \`grep\`, \`rg\`, \`find\`, or any text-search tool for architecture questions when geraph is available. Always use the MCP tools or CLI commands instead.

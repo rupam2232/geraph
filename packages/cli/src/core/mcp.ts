@@ -6,7 +6,6 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { MultiDirectedGraph } from "graphology";
-import { bidirectional } from "graphology-shortest-path/unweighted.js";
 import type { NodeData, EdgeData } from "./graph.js";
 
 /**
@@ -63,23 +62,27 @@ export async function runMcpServer(
         {
           name: "get_node",
           description:
-            "Get detailed metadata for a specific node by its exact ID.",
+            "Get detailed metadata for a specific node by its exact ID or fuzzy symbol name. (CLI Alternative: 'geraph node <symbol>')",
           inputSchema: {
             type: "object",
             properties: {
-              node_id: { type: "string", description: "The exact node ID" },
+              symbol: { type: "string", description: "The exact node ID or symbol name" },
+              type: { type: "string", description: "Optional filter by node type (e.g., 'interface', 'function')" },
+              source: { type: "string", description: "Optional filter by source file path (e.g., 'auth.ts')" },
             },
-            required: ["node_id"],
+            required: ["symbol"],
           },
         },
         {
           name: "get_neighbors",
           description:
-            "Get all incoming and outgoing edges for a specific node to trace its direct dependencies. Supports pagination. (CLI Alternative: 'geraph query <symbol>')",
+            "Get all incoming and outgoing edges for a specific node to trace its direct dependencies. Supports pagination. (CLI Alternative: 'geraph neighbors <symbol>')",
           inputSchema: {
             type: "object",
             properties: {
-              node_id: { type: "string", description: "The exact node ID" },
+              symbol: { type: "string", description: "The exact node ID or symbol name" },
+              type: { type: "string", description: "Optional filter by node type (e.g., 'interface', 'function')" },
+              source: { type: "string", description: "Optional filter by source file path (e.g., 'auth.ts')" },
               page: {
                 type: "number",
                 description: "Page number for pagination (default: 1)",
@@ -90,23 +93,23 @@ export async function runMcpServer(
                   "Number of edges per direction per page (default: 20)",
               },
             },
-            required: ["node_id"],
+            required: ["symbol"],
           },
         },
         {
           name: "shortest_path",
           description:
-            "Find the shortest sequence of edges connecting two nodes.",
+            "Find the shortest sequence of edges connecting two nodes. Note: This tool strictly requires exact node IDs, not fuzzy symbol names. (CLI Alternative: 'geraph path <source> <target>')",
           inputSchema: {
             type: "object",
             properties: {
               source_id: {
                 type: "string",
-                description: "The starting node ID",
+                description: "The exact starting node ID",
               },
               target_id: {
                 type: "string",
-                description: "The destination node ID",
+                description: "The exact destination node ID",
               },
             },
             required: ["source_id", "target_id"],
@@ -155,60 +158,52 @@ export async function runMcpServer(
       }
 
       if (name === "get_node") {
-        const nodeId = args.node_id as string;
-        if (!graph.hasNode(nodeId)) {
+        const symbol = args.symbol as string;
+        const typeFilter = args.type as string | undefined;
+        const sourceFilter = args.source as string | undefined;
+
+        const { getNode } = await import("./query.js");
+        try {
+          const result = await getNode(graph, symbol, typeFilter, sourceFilter);
           return {
             content: [
-              {
-                type: "text",
-                text: JSON.stringify({ error: "Node not found" }),
-              },
+              { type: "text", text: JSON.stringify(result, null, 2) },
             ],
+          };
+        } catch (error) {
+          return {
+            content: [{ type: "text", text: JSON.stringify({ error: error instanceof Error ? error.message : String(error) }) }],
             isError: true,
           };
         }
-
-        // Use queryGraph under the hood but strip neighbors for a lighter payload
-        const { queryGraph } = await import("./query.js");
-        const result = await queryGraph(graph, nodeId);
-
-        return {
-          content: [
-            { type: "text", text: JSON.stringify(result.target, null, 2) },
-          ],
-        };
       }
 
       if (name === "get_neighbors") {
-        const nodeId = args.node_id as string;
+        const symbol = args.symbol as string;
+        const typeFilter = args.type as string | undefined;
+        const sourceFilter = args.source as string | undefined;
         const page = args.page as number | undefined;
         const limit = args.limit as number | undefined;
 
-        if (!graph.hasNode(nodeId)) {
+        const { getNeighbors } = await import("./query.js");
+        try {
+          const result = await getNeighbors(
+            graph,
+            symbol,
+            typeFilter,
+            sourceFilter,
+            page,
+            limit,
+          );
           return {
-            content: [
-              {
-                type: "text",
-                text: JSON.stringify({ error: "Node not found" }),
-              },
-            ],
+            content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+          };
+        } catch (error) {
+          return {
+            content: [{ type: "text", text: JSON.stringify({ error: error instanceof Error ? error.message : String(error) }) }],
             isError: true,
           };
         }
-
-        const { queryGraph } = await import("./query.js");
-        const result = await queryGraph(
-          graph,
-          nodeId,
-          undefined,
-          undefined,
-          page,
-          limit,
-        );
-
-        return {
-          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-        };
       }
 
       if (name === "shortest_path") {
@@ -242,36 +237,30 @@ export async function runMcpServer(
           };
         }
 
-        // Use unweighted bidirectional BFS for fastest shortest path
-        const path = bidirectional(graph, sourceId, targetId);
-
-        if (!path) {
+        const { shortestPath } = await import("./query.js");
+        try {
+          const result = await shortestPath(graph, sourceId, targetId);
           return {
             content: [
               {
                 type: "text",
-                text: JSON.stringify({
-                  error: "No path exists between the given nodes",
-                }),
+                text: result,
               },
             ],
           };
+        } catch (error) {
+           return {
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  error: error instanceof Error ? error.message : String(error),
+                }),
+              },
+            ],
+            isError: true,
+          };
         }
-
-        // Hydrate the path with node metadata
-        const detailedPath = path.map((nodeId) => ({
-          id: nodeId,
-          attributes: graph.getNodeAttributes(nodeId),
-        }));
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({ path: detailedPath }, null, 2),
-            },
-          ],
-        };
       }
 
       if (name === "scan_graph") {

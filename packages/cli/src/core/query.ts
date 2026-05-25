@@ -140,21 +140,15 @@ export async function searchGraph(
   };
 }
 
-export async function queryGraph(
-  targetDirOrGraph: string | MultiDirectedGraph<NodeData, EdgeData>,
+function resolveTargetNodeId(
+  graph: MultiDirectedGraph<NodeData, EdgeData>,
   symbol: string,
   targetType?: string,
-  targetSource?: string,
-  page: number = 1,
-  limit: number = 20
-): Promise<QueryResult> {
-  const graph = typeof targetDirOrGraph === "string" ? loadGraph(targetDirOrGraph) : targetDirOrGraph;
-
-  // Find node by exact ID first, then fuzzy match name
+  targetSource?: string
+): string {
   const normSymbol = normalizeId(symbol);
   let targetNodeId = graph.hasNode(normSymbol) ? normSymbol : null;
 
-  // If a specific type or source is requested and the exact ID match fails them, discard it.
   if (targetNodeId && (targetType || targetSource)) {
       const attr = graph.getNodeAttributes(targetNodeId);
       if (targetType && attr.type !== targetType) {
@@ -169,7 +163,6 @@ export async function queryGraph(
   }
 
   if (!targetNodeId) {
-    // Attempt Case-Sensitive Match First
     targetNodeId = graph.findNode((nodeId, attr) => {
       if (targetType && attr.type !== targetType) return false;
       if (targetSource) {
@@ -184,7 +177,6 @@ export async function queryGraph(
   }
 
   if (!targetNodeId) {
-    // Fallback to Case-Insensitive Match
     targetNodeId = graph.findNode((nodeId, attr) => {
       if (targetType && attr.type !== targetType) return false;
       if (targetSource) {
@@ -204,6 +196,44 @@ export async function queryGraph(
     throw new Error(`Symbol '${symbol}'${typeMsg}${sourceMsg} not found in the graph.`);
   }
 
+  return targetNodeId;
+}
+
+export async function getNode(
+  targetDirOrGraph: string | MultiDirectedGraph<NodeData, EdgeData>,
+  symbol: string,
+  targetType?: string,
+  targetSource?: string
+): Promise<QueryResultNode> {
+  const graph = typeof targetDirOrGraph === "string" ? loadGraph(targetDirOrGraph) : targetDirOrGraph;
+  const targetNodeId = resolveTargetNodeId(graph, symbol, targetType, targetSource);
+  const targetAttr = graph.getNodeAttributes(targetNodeId);
+  return {
+    id: targetNodeId,
+    name: targetAttr.name,
+    type: targetAttr.type,
+    file: targetAttr.file,
+    line: targetAttr.startLine,
+    metadata: targetAttr.metadata,
+    links: {
+      incoming: graph.inDegree(targetNodeId),
+      outgoing: graph.outDegree(targetNodeId),
+    },
+  };
+}
+
+export async function getNeighbors(
+  targetDirOrGraph: string | MultiDirectedGraph<NodeData, EdgeData>,
+  symbol: string,
+  targetType?: string,
+  targetSource?: string,
+  page: number = 1,
+  limit: number = 20
+): Promise<QueryResult> {
+  const graph = typeof targetDirOrGraph === "string" ? loadGraph(targetDirOrGraph) : targetDirOrGraph;
+
+  const targetNodeId = resolveTargetNodeId(graph, symbol, targetType, targetSource);
+
   const targetAttr = graph.getNodeAttributes(targetNodeId);
   const result: QueryResult = {
     target: {
@@ -212,11 +242,6 @@ export async function queryGraph(
       type: targetAttr.type,
       file: targetAttr.file,
       line: targetAttr.startLine,
-      metadata: targetAttr.metadata,
-      links: {
-        incoming: graph.inDegree(targetNodeId),
-        outgoing: graph.outDegree(targetNodeId),
-      },
     },
     incoming: [],
     outgoing: [],
@@ -312,4 +337,106 @@ export async function queryGraph(
   };
 
   return result;
+}
+
+function undirectedShortestPath(
+  graph: MultiDirectedGraph<NodeData, EdgeData>,
+  source: string,
+  target: string
+): string[] | null {
+  if (source === target) return [source];
+
+  const queue: string[] = [source];
+  const visited = new Set<string>([source]);
+  const parent = new Map<string, string>();
+
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    if (current === target) break;
+
+    graph.forEachNeighbor(current, (neighbor) => {
+      if (!visited.has(neighbor)) {
+        visited.add(neighbor);
+        parent.set(neighbor, current);
+        queue.push(neighbor);
+      }
+    });
+  }
+
+  if (!parent.has(target)) return null;
+
+  const path: string[] = [];
+  let curr = target;
+  while (curr !== source) {
+    path.unshift(curr);
+    curr = parent.get(curr)!;
+  }
+  path.unshift(source);
+  return path;
+}
+
+export async function shortestPath(
+  targetDirOrGraph: string | MultiDirectedGraph<NodeData, EdgeData>,
+  sourceId: string,
+  targetId: string
+): Promise<string> {
+  const graph = typeof targetDirOrGraph === "string" ? loadGraph(targetDirOrGraph) : targetDirOrGraph;
+  
+  const normSource = normalizeId(sourceId);
+  const normTarget = normalizeId(targetId);
+
+  if (!graph.hasNode(normSource)) {
+    throw new Error(`Source node '${sourceId}' not found`);
+  }
+  if (!graph.hasNode(normTarget)) {
+    throw new Error(`Target node '${targetId}' not found`);
+  }
+
+  if (normSource === normTarget) {
+    throw new Error(`Source and target nodes are identical: '${sourceId}'`);
+  }
+
+  const path = undirectedShortestPath(graph, normSource, normTarget);
+
+  if (!path) {
+    throw new Error("No path exists between the given nodes");
+  }
+
+  const hops = path.length - 1;
+  const segments: string[] = [];
+
+  for (let i = 0; i < path.length - 1; i++) {
+    const u = path[i];
+    const v = path[i + 1];
+
+    let forward = true;
+    let edgeId: string | undefined;
+
+    if (graph.hasDirectedEdge(u, v)) {
+      edgeId = graph.edges(u, v)[0];
+    } else if (graph.hasDirectedEdge(v, u)) {
+      edgeId = graph.edges(v, u)[0];
+      forward = false;
+    }
+
+    const edata = edgeId ? graph.getEdgeAttributes(edgeId) : undefined;
+    const rel = edata?.type || "";
+    const conf = edata?.confidence || "";
+    const confStr = conf ? ` [${conf}]` : "";
+
+    const uLabel = String(graph.getNodeAttribute(u, "name") || u);
+    const vLabel = String(graph.getNodeAttribute(v, "name") || v);
+
+    if (i === 0) {
+      segments.push(uLabel);
+    }
+
+    if (forward) {
+      segments.push(`--${rel}${confStr}--> ${vLabel}`);
+    } else {
+      segments.push(`<--${rel}${confStr}-- ${vLabel}`);
+    }
+  }
+
+  return `Shortest path (${hops} hops):\n  ` + segments.join(" ");
 }
