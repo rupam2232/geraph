@@ -103,19 +103,38 @@ AST extraction is done locally via tree-sitter.
 ## Common commands
 
 ```bash
-geraph scan                                    # build graph for the current folder
-geraph search '<term>' [--type <type>]         # discover multiple nodes matching a term
-geraph node '<symbol>' [--type <type>] [--source <file>] # fetch metadata for a specific node
-geraph neighbors '<symbol>' [--type <type>] [--source <file>] # trace incoming/outgoing edges for a node
-geraph path '<source>' '<target>' # find the shortest path between two nodes
-geraph install [platform]                      # install geraph rules for a platform
-geraph uninstall [platform]                    # remove geraph rules from a project
+# 1. AST Graph Management & Verification
+geraph scan                                             # Build/rebuild the knowledge graph for the current folder
+geraph stats                                            # Print summary statistics (node/edge count & confidence breakdown)
+
+# 2. Structural Codebase Exploration & Searching
+geraph search <term> [--type <type>] [--page <p>] [--limit <l>] # Discover multiple nodes matching a partial term or path
+geraph node <symbol> [--type <type>] [--source <file>]  # Fetch complete metadata for a specific node
+geraph neighbors <symbol> [--type <type>] [--source <file>] [--page <p>] [--limit <l>] # Trace incoming/outgoing edges
+
+# 3. Pathfinding & Context Traversal
+geraph path <source> <target> [--max-hops <hops>]       # Find the shortest undirected relationship chain between nodes
+geraph query <symbol-or-question> [--mode <bfs|dfs>] [--depth <d>] [--budget <b>] # Crawl AST graph via keywords or natural question
+
+# 4. Core Abstractions & Analysis
+geraph god [--page <p>] [--limit <l>]                  # Fetch the most-connected nodes (architectural pillars)
+geraph community <id> [--page <p>] [--limit <l>]        # Fetch all nodes grouped inside a specific Louvain community
+geraph surprises [--page <p>] [--limit <l>]            # Fetch surprising cross-community bridges
+
+# 5. Platforms Setup
+geraph install <platform>                               # Install geraph context rules/skills for an IDE or assistant
+geraph uninstall [platform]                             # Remove geraph rules from a project (omit platform for all)
 ```
 
-**Options for Search & Query:**
-- `--type <type>`: Filter results by node type (e.g., `interface`, `class`, `function`, `file`).
-- `--source <file>`: (*Query only*) Filter results by the source file path to resolve ambiguous symbols.
-- `-p, --page <number>` / `-l, --limit <number>`: Paginate through large result sets.
+**Common Options & Flags:**
+* `-t, --type <type>`: Filter results by AST node type (e.g. `file`, `class`, `function`, `interface`, `type`, `enum`).
+* `-s, --source <file>`: Filter/disambiguate results by matching containing source file path suffix.
+* `-p, --page <number>`: The page index to fetch (Default: `1`).
+* `-l, --limit <number>`: Items per page (Default: `20` for neighbors/search, `10` for god nodes).
+* `-m, --max-hops <number>`: Maximumhops to consider when tracing shortest path (Default: `8`).
+* `--mode <bfs|dfs>`: Traversal algorithm used when traversing context graph (Default: `bfs`).
+* `--depth <number>`: Search crawl depth limit used in graph queries (Default: `3`).
+* `--budget <number>`: Output budget size in tokens to prevent context overflow (Default: `2000`).
 
 ---
 

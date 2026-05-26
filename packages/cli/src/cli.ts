@@ -364,9 +364,12 @@ program
   });
 
 program
-  .command("path <sourceId> <targetId>")
-  .description("Find the shortest path between two exact node IDs")
-  .action(async (sourceId, targetId) => {
+  .command("path <source> <target>")
+  .description(
+    "Find the shortest path between two nodes using fuzzy symbol/ID lookup",
+  )
+  .option("-m, --max-hops <number>", "Maximum hops to consider", "8")
+  .action(async (source, target, options) => {
     const spinner = ora({
       text: chalk.gray(`Finding shortest path...`),
       color: "blue",
@@ -374,13 +377,170 @@ program
     }).start();
     try {
       const { shortestPath } = await import("./core/query.js");
-      const result = await shortestPath(process.cwd(), sourceId, targetId);
+      const maxHops = Number(options.maxHops || 8);
+      const result = await shortestPath(process.cwd(), source, target, maxHops);
       spinner.stop();
       console.log(result);
     } catch (error) {
       spinner.fail(
         chalk.red(
           `Path failed: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      );
+      process.exit(1);
+    }
+  });
+
+program
+  .command("god")
+  .description(
+    "Return the most connected nodes — the core architectural pillars of the codebase",
+  )
+  .option("-p, --page <number>", "Page number for pagination", "1")
+  .option("-l, --limit <number>", "Number of results per page", "10")
+  .action(async (options) => {
+    const spinner = ora({
+      text: chalk.gray(`Fetching core nodes...`),
+      color: "blue",
+      spinner: "dots",
+    }).start();
+    try {
+      const { getGodNodes } = await import("./core/query.js");
+      const result = await getGodNodes(
+        process.cwd(),
+        Number(options.page),
+        Number(options.limit),
+      );
+      spinner.stop();
+      console.log(result);
+    } catch (error) {
+      spinner.fail(
+        chalk.red(
+          `Failed to fetch god nodes: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      );
+      process.exit(1);
+    }
+  });
+
+program
+  .command("community <id>")
+  .description("Get all nodes in a community by community ID")
+  .option("-p, --page <number>", "Page number for pagination", "1")
+  .option("-l, --limit <number>", "Number of results per page", "20")
+  .action(async (id, options) => {
+    const spinner = ora({
+      text: chalk.gray(`Fetching nodes in community ${id}...`),
+      color: "blue",
+      spinner: "dots",
+    }).start();
+    try {
+      const { getCommunityNodes } = await import("./core/query.js");
+      const result = await getCommunityNodes(
+        process.cwd(),
+        Number(id),
+        Number(options.page),
+        Number(options.limit),
+      );
+      spinner.stop();
+      console.log(result);
+    } catch (error) {
+      spinner.fail(
+        chalk.red(
+          `Failed to fetch community: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      );
+      process.exit(1);
+    }
+  });
+
+program
+  .command("surprises")
+  .description(
+    "Discover surprising cross-community couplings that link otherwise independent modules",
+  )
+  .option("-p, --page <number>", "Page number for pagination", "1")
+  .option("-l, --limit <number>", "Number of results per page", "20")
+  .action(async (options) => {
+    const spinner = ora({
+      text: chalk.gray(`Querying surprising connections...`),
+      color: "blue",
+      spinner: "dots",
+    }).start();
+    try {
+      const { getSurprisingConnections } = await import("./core/query.js");
+      const result = await getSurprisingConnections(
+        process.cwd(),
+        Number(options.page),
+        Number(options.limit),
+      );
+      spinner.stop();
+      console.log(result);
+    } catch (error) {
+      spinner.fail(
+        chalk.red(
+          `Failed to fetch surprises: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      );
+      process.exit(1);
+    }
+  });
+
+program
+  .command("query <symbol-or-question>")
+  .description(
+    "Search the AST graph using BFS or DFS traversal with keyword or natural language support, returning a compact context representation",
+  )
+  .option("-m, --mode <mode>", "Traversal mode (bfs or dfs)", "bfs")
+  .option("-d, --depth <number>", "Traversal depth limit", "3")
+  .option("-b, --budget <number>", "Estimated output token limit", "2000")
+  .action(async (symbolOrQuestion, options) => {
+    const spinner = ora({
+      text: chalk.gray(`Traversing AST graph from ${symbolOrQuestion}...`),
+      color: "blue",
+      spinner: "dots",
+    }).start();
+    try {
+      const { queryGraph } = await import("./core/query.js");
+      const result = await queryGraph(
+        process.cwd(),
+        symbolOrQuestion,
+        options.mode as "bfs" | "dfs",
+        Number(options.depth),
+        Number(options.budget),
+      );
+      spinner.stop();
+      console.log(result);
+    } catch (error) {
+      spinner.fail(
+        chalk.red(
+          `Query failed: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      );
+      process.exit(1);
+    }
+  });
+
+program
+  .command("stats")
+  .description(
+    "Return summary statistics of the graph: node count, edge count, community count, and extraction confidence percentage breakdown",
+  )
+  .action(async () => {
+    const spinner = ora({
+      text: chalk.gray(`Querying graph statistics...`),
+      color: "blue",
+      spinner: "dots",
+    }).start();
+    try {
+      const { getGraphStats } = await import("./core/query.js");
+      const result = await getGraphStats(process.cwd());
+      spinner.stop();
+      console.log(result);
+    } catch (error) {
+      spinner.fail(
+        chalk.red(
+          `Failed to fetch stats: ${error instanceof Error ? error.message : String(error)}`,
         ),
       );
       process.exit(1);

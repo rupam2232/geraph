@@ -84,18 +84,18 @@ export function exportReportMarkdown(
 
   // Section 1: Architecture (Files and Functions)
   md += `## Architecture Structure\n`;
-  md += `*Note: Only the first 100 files and their primary members are listed here. Use 'query' for full details.*\n\n`;
+  md += `*Note: Only the first 100 files and their primary members are listed here. For full data, use the \`search_graph\` or \`query_graph\` MCP tools (recommended) or corresponding CLI commands.*\n\n`;
 
-  const fileNodes = graph
+  const allFileNodes = graph
     .nodes()
-    .filter((n) => graph.getNodeAttribute(n, "type") === "file")
-    .slice(0, 100);
+    .filter((n) => graph.getNodeAttribute(n, "type") === "file");
+  const fileNodes = allFileNodes.slice(0, 100);
 
   for (const file of fileNodes) {
     const data = graph.getNodeAttributes(file);
     if (data.metadata?.external) continue;
 
-    md += `- **${data.name}**\n`;
+    md += `- **${data.name}** [id: \`${file}\`]\n`;
 
     // Find classes and functions defined in this file
     const definesEdges = graph.outEdges(file).filter((edgeId) => {
@@ -107,44 +107,70 @@ export function exportReportMarkdown(
     for (const edgeId of membersToShow) {
       const target = graph.target(edgeId);
       const targetData = graph.getNodeAttributes(target);
-      md += `  - \`${targetData.type} ${targetData.name}\`\n`;
+      md += `  - \`${targetData.type} ${targetData.name}\` [id: \`${target}\`]\n`;
     }
     if (definesEdges.length > 5) {
       md += `  - ... and ${definesEdges.length - 5} more\n`;
     }
   }
 
+  if (allFileNodes.length > 100) {
+    md += `\n- *... and ${allFileNodes.length - 100} more file nodes. Use \`search_graph\` or \`query_graph\` MCP tools (recommended) to explore them.*\n`;
+  }
+
   // Section 2: God Nodes
   if (analysis && analysis.godNodes.length > 0) {
-    md += `\n## God Nodes (Architectural Pillars)\n`;
-    md += `These are the most-connected entities in the codebase. Changes to these nodes have the largest ripple effect.\n\n`;
-    for (const god of analysis.godNodes) {
-      md += `- **${god.name}** (\`${god.type}\`, ${god.degree} connections)\n`;
+    const realNodesCount = graph.nodes().filter(n => {
+      const type = graph.getNodeAttribute(n, "type");
+      return type !== "intent" && !n.startsWith("import::") && !n.startsWith("unresolved_");
+    }).length;
+
+    const title = realNodesCount > 10 ? "Top 10 God Nodes (Architectural Pillars)" : "God Nodes (Architectural Pillars)";
+    md += `\n## ${title}\n`;
+    md += `These are the most-connected entities in the codebase. Changes to these nodes have the largest ripple effect. For full data, use the \`god_nodes\` MCP tool (recommended) or \`geraph god\` CLI command.\n\n`;
+    
+    const godsToShow = analysis.godNodes.slice(0, 10);
+    for (const god of godsToShow) {
+      md += `- **${god.name}** (type: \`${god.type}\`, id: \`${god.id}\`, ${god.degree} connections)\n`;
     }
   }
 
   // Section 3: Communities
   if (analysis && analysis.communities.length > 0) {
     md += `\n## Communities\n`;
-    md += `The codebase clusters into ${analysis.communities.length} communities of related code.\n\n`;
+    md += `The codebase clusters into ${analysis.communities.length} communities of related code. For full community membership, use the \`get_community\` MCP tool (recommended) or \`geraph community <id>\` CLI command.\n\n`;
     for (const comm of analysis.communities) {
-      const topMembers = comm.nodes
-        .filter((n) => !n.startsWith("commit::") && !n.startsWith("import::") && !n.startsWith("unresolved_"))
-        .slice(0, 5)
-        .map((n) => {
-          const data = graph.getNodeAttributes(n);
-          return data ? data.name : n;
-        });
-      md += `- **Community ${comm.id}** (${comm.nodes.length} nodes, cohesion: ${comm.cohesion}) — ${topMembers.join(", ")}\n`;
+      const realNodes = comm.nodes.filter(
+        (n) => !n.startsWith("commit::") && !n.startsWith("import::") && !n.startsWith("unresolved_") && graph.hasNode(n)
+      );
+      // Sort by degree descending to show the most connected community members first
+      realNodes.sort((a, b) => graph.degree(b) - graph.degree(a));
+
+      const top5 = realNodes.slice(0, 5);
+      const memberStrings = top5.map((n) => {
+        const data = graph.getNodeAttributes(n);
+        const name = data ? data.name : n;
+        return `**${name}** [id: \`${n}\`]`;
+      });
+
+      let communityLine = `- **Community ${comm.id}** (${comm.nodes.length} nodes, cohesion: ${comm.cohesion}) — ${memberStrings.join(", ")}`;
+      if (realNodes.length > 5) {
+        communityLine += `, and ${realNodes.length - 5} more.`;
+      }
+      md += communityLine + "\n";
     }
   }
 
   // Section 4: Surprising Connections
   if (analysis && analysis.surprisingConnections.length > 0) {
-    md += `\n## Surprising Connections\n`;
-    md += `Non-obvious couplings that bridge different parts of the architecture.\n\n`;
-    for (const s of analysis.surprisingConnections) {
-      md += `- **${s.sourceName}** ↔ **${s.targetName}** (\`${s.edgeType}\`): ${s.why}\n`;
+    const totalSurprises = analysis.surprisingConnections.length;
+    const title = totalSurprises > 10 ? "Top 10 Surprising Connections" : "Surprising Connections";
+    md += `\n## ${title}\n`;
+    md += `Non-obvious couplings that bridge different parts of the architecture. For full data, use the \`get_surprises\` MCP tool (recommended) or \`geraph surprises\` CLI command.\n\n`;
+    
+    const surprisesToShow = analysis.surprisingConnections.slice(0, 10);
+    for (const s of surprisesToShow) {
+      md += `- **${s.sourceName}** [id: \`${s.source}\`] ↔ **${s.targetName}** [id: \`${s.target}\`] (\`${s.edgeType}\`): ${s.why}\n`;
     }
   }
 

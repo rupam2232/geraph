@@ -8,41 +8,38 @@ const END_MARKER = "<!-- GERAPH_END -->";
 
 const SHARED_RULES = `## geraph
 
-This project uses a geraph knowledge graph.
+This project uses Geraph knowledge graph to track codebase relationships.
+
+**CRITICAL:** Before answering any architectural, structural, or dependency questions, you MUST read the comprehensive Geraph Skill.
 
 Rules:
 - If running any \`geraph\` command returns 'command not found', you MUST install it globally using \`npm install -g geraph\` before proceeding.
-- Before answering architecture or codebase questions, read \`.geraph/GRAPH_REPORT.md\` for god nodes and community structure.
-- NEVER try to read the massive \`.geraph/graph.json\` file directly. It is for internal CLI use only.
-- For discovery, use the \`search_graph\` MCP tool or \`geraph search '<term>' [--type <type>] [-p <page>] [-l <limit>]\`.
-- For node metadata, use the \`get_node\` MCP tool or \`geraph node '<symbol>' [--type <type>] [--source <file>]\`.
-- For precise architecture navigation, use the \`get_neighbors\` MCP tool or \`geraph neighbors '<symbol>' [--type <type>] [--source <file>] [-p <page>] [-l <limit>]\` instead of falling back to \`grep\`.
-- After modifying code files in this session, run the \`scan_graph\` MCP tool or \`geraph scan\` to keep the graph current.
-- NEVER use \`grep\`, \`rg\`, \`find\`, or any text-search tool for architecture questions when geraph is available. Always use the MCP tools or CLI commands instead.
-- **NOTE**: There are NO extra or hidden options for these commands. DO NOT hallucinate flags. Only use the options explicitly mentioned here.
+- Before answering, read \`.geraph/GRAPH_REPORT.md\` (or read the \`geraph://report\` MCP resource) for a high-level overview.
+- NEVER try to read the massive \`.geraph/graph.json\` or the \`.geraph/graph.html\` files directly. They will overflow your context window and crash your session.
+- NEVER read any files inside the \`.geraph/cache\` directory (like \`git-cache.json\`) directly as they contain massive raw blame indexes that will overflow your context.
+- Prioritize using the native Geraph MCP tools and resources (if available) over terminal CLI commands.
+- **MCP Resources:** Access high-level statistics, reports, and god nodes directly via read-only resources: \`geraph://report\`, \`geraph://stats\`, \`geraph://god-nodes\`, \`geraph://surprises\`, and \`geraph://audit\`.
+- After modifying files or pushing a Git commit, you MUST run the \`scan_graph\` MCP tool or the \`geraph scan\` CLI command to sync the graph.
+- NEVER use \`grep\`, \`rg\`, or \`find\` for codebase architecture exploration when Geraph is available.
 
 [GLOBAL_POINTER]
 `;
 
 const COPILOT_RULES = `## geraph
 
-For any question about this repo's architecture, structure, components, or how to add/modify/find code, your **first action must be** to read \`.geraph/GRAPH_REPORT.md\` (if it exists).
+For any question about this repo's architecture, components, or dependency structure, your **first action** must be to consult Geraph. 
 
-Triggers: "how do I...", "where is...", "what does ... do", "add/modify a <component>", "explain the architecture", or anything that depends on how files or classes relate.
+**CRITICAL:** Before answering, you MUST read the comprehensive Geraph Skill.
 
-After reading the report, answer using the graph context. Only read source files when (a) modifying/debugging specific code, (b) the graph lacks the needed detail, or (c) the graph is missing or stale.
-
-If running any \`geraph\` command returns a 'command not found' error, you MUST install it globally using \`npm install -g geraph\` before proceeding.
-
-NEVER attempt to read the massive \`.geraph/graph.json\` file directly. Use the native MCP tools or CLI instead:
-- **Discover nodes**: \`search_graph\` MCP tool or \`geraph search '<term>' [--type <type>] [-p <page>] [-l <limit>]\`
-- **Node metadata**: \`get_node\` MCP tool or \`geraph node '<symbol>' [--type <type>] [--source <file>]\`
-- **Trace dependencies**: \`get_neighbors\` MCP tool or \`geraph neighbors '<symbol>' [--type <type>] [--source <file>] [-p <page>] [-l <limit>]\`
-- **Update graph**: \`scan_graph\` MCP tool or \`geraph scan\`
-
-NEVER use \`grep\`, \`rg\`, \`find\`, or any text-search tool for architecture questions when geraph is available. Always use the MCP tools or CLI commands instead.
-
-**NOTE**: There are NO extra or hidden options for these commands. DO NOT hallucinate flags. Only use the options explicitly mentioned here.
+Rules:
+- If running any \`geraph\` command returns 'command not found', you MUST install it globally using \`npm install -g geraph\` before proceeding.
+- Before answering, read \`.geraph/GRAPH_REPORT.md\` (or read the \`geraph://report\` MCP resource) for a high-level overview.
+- NEVER try to read the massive \`.geraph/graph.json\` or the \`.geraph/graph.html\` files directly. They will overflow your context window.
+- NEVER read any files inside the \`.geraph/cache\` directory (like \`git-cache.json\`) directly as they contain massive raw blame indexes that will overflow your context.
+- Prioritize using the native Geraph MCP tools and resources (if available) over terminal CLI commands.
+- **MCP Resources:** Access high-level statistics, reports, and god nodes directly via read-only resources: \`geraph://report\`, \`geraph://stats\`, \`geraph://god-nodes\`, \`geraph://surprises\`, and \`geraph://audit\`.
+- After modifying files or pushing a Git commit, you MUST run the \`scan_graph\` MCP tool or the \`geraph scan\` CLI command to sync the graph.
+- NEVER use \`grep\`, \`rg\`, or \`find\` for codebase architecture exploration when Geraph is available.
 
 [GLOBAL_POINTER]
 `;

@@ -4,9 +4,13 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
+  ListResourcesRequestSchema,
+  ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { MultiDirectedGraph } from "graphology";
 import type { NodeData, EdgeData } from "./graph.js";
+import fs from "fs";
+import path from "path";
 
 /**
  * Initializes and runs the MCP server via stdio.
@@ -23,6 +27,7 @@ export async function runMcpServer(
     {
       capabilities: {
         tools: {},
+        resources: {},
       },
     },
   );
@@ -66,9 +71,20 @@ export async function runMcpServer(
           inputSchema: {
             type: "object",
             properties: {
-              symbol: { type: "string", description: "The exact node ID or symbol name" },
-              type: { type: "string", description: "Optional filter by node type (e.g., 'interface', 'function')" },
-              source: { type: "string", description: "Optional filter by source file path (e.g., 'auth.ts')" },
+              symbol: {
+                type: "string",
+                description: "The exact node ID or symbol name",
+              },
+              type: {
+                type: "string",
+                description:
+                  "Optional filter by node type (e.g., 'interface', 'function')",
+              },
+              source: {
+                type: "string",
+                description:
+                  "Optional filter by source file path (e.g., 'auth.ts')",
+              },
             },
             required: ["symbol"],
           },
@@ -80,9 +96,20 @@ export async function runMcpServer(
           inputSchema: {
             type: "object",
             properties: {
-              symbol: { type: "string", description: "The exact node ID or symbol name" },
-              type: { type: "string", description: "Optional filter by node type (e.g., 'interface', 'function')" },
-              source: { type: "string", description: "Optional filter by source file path (e.g., 'auth.ts')" },
+              symbol: {
+                type: "string",
+                description: "The exact node ID or symbol name",
+              },
+              type: {
+                type: "string",
+                description:
+                  "Optional filter by node type (e.g., 'interface', 'function')",
+              },
+              source: {
+                type: "string",
+                description:
+                  "Optional filter by source file path (e.g., 'auth.ts')",
+              },
               page: {
                 type: "number",
                 description: "Page number for pagination (default: 1)",
@@ -99,20 +126,126 @@ export async function runMcpServer(
         {
           name: "shortest_path",
           description:
-            "Find the shortest sequence of edges connecting two nodes. Note: This tool strictly requires exact node IDs, not fuzzy symbol names. (CLI Alternative: 'geraph path <source> <target>')",
+            "Find the shortest sequence of edges connecting two nodes using fuzzy symbol/ID lookup. (CLI Alternative: 'geraph path <source> <target>')",
           inputSchema: {
             type: "object",
             properties: {
-              source_id: {
+              source: {
                 type: "string",
-                description: "The exact starting node ID",
+                description: "The fuzzy starting node ID or symbol name",
               },
-              target_id: {
+              target: {
                 type: "string",
-                description: "The exact destination node ID",
+                description: "The fuzzy destination node ID or symbol name",
+              },
+              max_hops: {
+                type: "number",
+                description: "Maximum hops to consider (default: 8)",
               },
             },
-            required: ["source_id", "target_id"],
+            required: ["source", "target"],
+          },
+        },
+        {
+          name: "god_nodes",
+          description:
+            "Return the most connected nodes — the core architectural pillars of the codebase. Supports pagination. (CLI Alternative: 'geraph god')",
+          inputSchema: {
+            type: "object",
+            properties: {
+              page: {
+                type: "number",
+                description: "Page number for pagination (default: 1)",
+              },
+              limit: {
+                type: "number",
+                description: "Number of results per page (default: 10)",
+              },
+            },
+          },
+        },
+        {
+          name: "get_community",
+          description:
+            "Get all nodes in a community by community ID. Supports pagination. (CLI Alternative: 'geraph community <id>')",
+          inputSchema: {
+            type: "object",
+            properties: {
+              community_id: {
+                type: "number",
+                description: "Community ID (0-indexed by size)",
+              },
+              page: {
+                type: "number",
+                description: "Page number for pagination (default: 1)",
+              },
+              limit: {
+                type: "number",
+                description: "Number of results per page (default: 20)",
+              },
+            },
+            required: ["community_id"],
+          },
+        },
+        {
+          name: "get_surprises",
+          description:
+            "Discover surprising cross-community couplings that link otherwise independent modules. Supports pagination. (CLI Alternative: 'geraph surprises')",
+          inputSchema: {
+            type: "object",
+            properties: {
+              page: {
+                type: "number",
+                description: "Page number for pagination (default: 1)",
+              },
+              limit: {
+                type: "number",
+                description: "Number of results per page (default: 20)",
+              },
+            },
+          },
+        },
+        {
+          name: "query_graph",
+          description:
+            "Search the AST graph using BFS or DFS traversal. Returns a compact context representation. Supports natural language questions or keywords. (CLI Alternative: 'geraph query <symbol-or-question>')",
+          inputSchema: {
+            type: "object",
+            properties: {
+              symbol: {
+                type: "string",
+                description: "Fuzzy starting symbol or node ID, or natural language question",
+              },
+              question: {
+                type: "string",
+                description: "Natural language question or keywords (for Graphify parity)",
+              },
+              mode: {
+                type: "string",
+                enum: ["bfs", "dfs"],
+                default: "bfs",
+                description: "Traversal mode: bfs (breadth) or dfs (depth)",
+              },
+              depth: {
+                type: "number",
+                default: 3,
+                description: "Traversal depth limit",
+              },
+              token_budget: {
+                type: "number",
+                default: 2000,
+                description: "Estimated output token limit",
+              },
+            },
+          },
+        },
+        {
+          name: "graph_stats",
+          description:
+            "Return summary statistics of the graph: node count, edge count, community count, and extraction confidence percentage breakdown. (CLI Alternative: 'geraph stats')",
+          inputSchema: {
+            type: "object",
+            properties: {},
           },
         },
         {
@@ -166,13 +299,18 @@ export async function runMcpServer(
         try {
           const result = await getNode(graph, symbol, typeFilter, sourceFilter);
           return {
-            content: [
-              { type: "text", text: JSON.stringify(result, null, 2) },
-            ],
+            content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
           };
         } catch (error) {
           return {
-            content: [{ type: "text", text: JSON.stringify({ error: error instanceof Error ? error.message : String(error) }) }],
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  error: error instanceof Error ? error.message : String(error),
+                }),
+              },
+            ],
             isError: true,
           };
         }
@@ -200,46 +338,27 @@ export async function runMcpServer(
           };
         } catch (error) {
           return {
-            content: [{ type: "text", text: JSON.stringify({ error: error instanceof Error ? error.message : String(error) }) }],
+            content: [
+              {
+                type: "text",
+                text: JSON.stringify({
+                  error: error instanceof Error ? error.message : String(error),
+                }),
+              },
+            ],
             isError: true,
           };
         }
       }
 
       if (name === "shortest_path") {
-        const sourceId = args.source_id as string;
-        const targetId = args.target_id as string;
-
-        if (!graph.hasNode(sourceId)) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: JSON.stringify({
-                  error: `Source node '${sourceId}' not found`,
-                }),
-              },
-            ],
-            isError: true,
-          };
-        }
-        if (!graph.hasNode(targetId)) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: JSON.stringify({
-                  error: `Target node '${targetId}' not found`,
-                }),
-              },
-            ],
-            isError: true,
-          };
-        }
+        const source = args.source as string;
+        const target = args.target as string;
+        const maxHops = args.max_hops !== undefined ? Number(args.max_hops) : 8;
 
         const { shortestPath } = await import("./query.js");
         try {
-          const result = await shortestPath(graph, sourceId, targetId);
+          const result = await shortestPath(graph, source, target, maxHops);
           return {
             content: [
               {
@@ -249,7 +368,7 @@ export async function runMcpServer(
             ],
           };
         } catch (error) {
-           return {
+          return {
             content: [
               {
                 type: "text",
@@ -258,6 +377,106 @@ export async function runMcpServer(
                 }),
               },
             ],
+            isError: true,
+          };
+        }
+      }
+
+      if (name === "god_nodes") {
+        const page = (args.page as number) || 1;
+        const limit = (args.limit as number) || 10;
+        const { getGodNodes } = await import("./query.js");
+        try {
+          const result = await getGodNodes(graph, page, limit);
+          return {
+            content: [{ type: "text", text: result }],
+          };
+        } catch (error) {
+          return {
+            content: [{ type: "text", text: String(error) }],
+            isError: true,
+          };
+        }
+      }
+
+      if (name === "get_community") {
+        const communityId = Number(args.community_id);
+        const page = (args.page as number) || 1;
+        const limit = (args.limit as number) || 20;
+        const { getCommunityNodes } = await import("./query.js");
+        try {
+          const result = await getCommunityNodes(
+            graph,
+            communityId,
+            page,
+            limit,
+          );
+          return {
+            content: [{ type: "text", text: result }],
+          };
+        } catch (error) {
+          return {
+            content: [{ type: "text", text: String(error) }],
+            isError: true,
+          };
+        }
+      }
+
+      if (name === "get_surprises") {
+        const page = (args.page as number) || 1;
+        const limit = (args.limit as number) || 20;
+        const { getSurprisingConnections } = await import("./query.js");
+        try {
+          const result = await getSurprisingConnections(graph, page, limit);
+          return {
+            content: [{ type: "text", text: result }],
+          };
+        } catch (error) {
+          return {
+            content: [{ type: "text", text: String(error) }],
+            isError: true,
+          };
+        }
+      }
+
+      if (name === "query_graph") {
+        const symbol = (args.symbol || args.question) as string;
+        if (!symbol) {
+          throw new Error("Either 'symbol' or 'question' parameter is required");
+        }
+        const mode = (args.mode as "bfs" | "dfs") || "bfs";
+        const depth = Number(args.depth ?? 3);
+        const tokenBudget = Number(args.token_budget ?? 2000);
+        const { queryGraph } = await import("./query.js");
+        try {
+          const result = await queryGraph(
+            graph,
+            symbol,
+            mode,
+            depth,
+            tokenBudget,
+          );
+          return {
+            content: [{ type: "text", text: result }],
+          };
+        } catch (error) {
+          return {
+            content: [{ type: "text", text: String(error) }],
+            isError: true,
+          };
+        }
+      }
+
+      if (name === "graph_stats") {
+        const { getGraphStats } = await import("./query.js");
+        try {
+          const result = await getGraphStats(graph);
+          return {
+            content: [{ type: "text", text: result }],
+          };
+        } catch (error) {
+          return {
+            content: [{ type: "text", text: String(error) }],
             isError: true,
           };
         }
@@ -319,6 +538,126 @@ export async function runMcpServer(
         isError: true,
       };
     }
+  });
+
+  // 3. Define Resources
+  server.setRequestHandler(ListResourcesRequestSchema, async () => {
+    return {
+      resources: [
+        {
+          uri: "geraph://report",
+          name: "Graph Report",
+          description: "Full GRAPH_REPORT.md",
+          mimeType: "text/markdown",
+        },
+        {
+          uri: "geraph://stats",
+          name: "Graph Stats",
+          description: "Node/edge/community counts and confidence breakdown",
+          mimeType: "text/plain",
+        },
+        {
+          uri: "geraph://god-nodes",
+          name: "God Nodes",
+          description: "Top 10 most-connected nodes",
+          mimeType: "text/plain",
+        },
+        {
+          uri: "geraph://surprises",
+          name: "Surprising Connections",
+          description: "Cross-community surprising connections",
+          mimeType: "text/plain",
+        },
+        {
+          uri: "geraph://audit",
+          name: "Confidence Audit",
+          description: "EXTRACTED/INFERRED/AMBIGUOUS edge breakdown",
+          mimeType: "text/plain",
+        },
+      ],
+    };
+  });
+
+  server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+    const { uri } = request.params;
+
+    if (uri === "geraph://report") {
+      const reportPath = path.join(targetDir, ".geraph", "GRAPH_REPORT.md");
+      if (fs.existsSync(reportPath)) {
+        return {
+          contents: [
+            {
+              uri,
+              mimeType: "text/markdown",
+              text: fs.readFileSync(reportPath, "utf-8"),
+            },
+          ],
+        };
+      }
+      return {
+        contents: [
+          {
+            uri,
+            mimeType: "text/markdown",
+            text: "GRAPH_REPORT.md not found. Run geraph scan first.",
+          },
+        ],
+      };
+    }
+
+    if (uri === "geraph://stats") {
+      const { getGraphStats } = await import("./query.js");
+      const text = await getGraphStats(graph);
+      return {
+        contents: [{ uri, mimeType: "text/plain", text }],
+      };
+    }
+
+    if (uri === "geraph://god-nodes") {
+      const { getGodNodes } = await import("./query.js");
+      const text = await getGodNodes(graph, 1, 10);
+      return {
+        contents: [{ uri, mimeType: "text/plain", text }],
+      };
+    }
+
+    if (uri === "geraph://surprises") {
+      const { getSurprisingConnections } = await import("./query.js");
+      const text = await getSurprisingConnections(graph, 1, 10);
+      return {
+        contents: [{ uri, mimeType: "text/plain", text }],
+      };
+    }
+
+    if (uri === "geraph://audit") {
+      let extractedCount = 0;
+      let inferredCount = 0;
+      let ambiguousCount = 0;
+
+      graph.forEachEdge((edgeId, attr) => {
+        if (attr.confidence === "EXTRACTED") extractedCount++;
+        else if (attr.confidence === "INFERRED") inferredCount++;
+        else if (attr.confidence === "AMBIGUOUS") ambiguousCount++;
+      });
+
+      const total = graph.size || 1;
+      const extPct = Math.round((extractedCount / total) * 100);
+      const infPct = Math.round((inferredCount / total) * 100);
+      const ambPct = Math.round((ambiguousCount / total) * 100);
+
+      const text = [
+        `Total edges: ${total}`,
+        `EXTRACTED: ${extractedCount} (${extPct}%)`,
+        `INFERRED: ${inferredCount} (${infPct}%)`,
+        `AMBIGUOUS: ${ambiguousCount} (${ambPct}%)`,
+      ].join("\n");
+
+      return {
+        contents: [{ uri, mimeType: "text/plain", text }],
+      };
+    }
+
+    throw new Error(`Unknown resource: ${uri}`);
   });
 
   const transport = new StdioServerTransport();
