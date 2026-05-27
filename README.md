@@ -31,7 +31,7 @@ geraph install [platform]
 geraph scan
 ```
 
-> **Note**: Replace `[platform]` with your actual platform name (e.g., `vscode`, `antigravity`, `claude`, `cursor`) from the table below.
+> Replace `[platform]` with your actual platform name (e.g., `vscode`, `antigravity`, `claude`, `cursor`) from the table below.
 
 That's it. You get three files:
 
@@ -77,18 +77,59 @@ Remove Geraph context rules and skills from your project.
 > **Pro Tip**: You can uninstall multiple platforms at once: `geraph uninstall vscode antigravity`
 
 ---
+## MCP Server (Recommended)
 
-## What's in the report
+Geraph features a fully local Model Context Protocol (MCP) server that operates completely over `stdio`. **Using the MCP server is highly recommended** over running terminal CLI commands for LLMs, as it is faster, strictly typed, and avoids terminal parsing bugs.
 
-- **God nodes** — the most-connected architectural pillars in your project. Everything flows through these.
-- **Surprising connections** — non-obvious couplings between unrelated modules.
-- **Git Intent** — links your code to the "Why" by extracting architectural rationale from your commit history.
-- **Semantic JSDoc** — extracts intent, documentation, and `@deprecated` status directly from comments.
-- **Confidence tags** — every relationship is marked `EXTRACTED`, `INFERRED`, or `AMBIGUOUS`. You always know what was found vs guessed.
+To expose the Geraph AST memory to an MCP-compatible client (like Cursor or Antigravity IDE), add the following configuration snippet:
+
+**For a project-level local setup:**
+```json
+{
+  "mcpServers": {
+    "geraph": {
+      "command": "geraph",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+**For a global setup:**
+If you configure the MCP server globally for your IDE, you must tell the server where your project is located. You can do this by setting the `cwd` field to your project path. If your IDE/platform doesn't support the `cwd` field, you can pass the project path as an argument instead:
+
+```json
+{
+  "mcpServers": {
+    "geraph": {
+      "command": "geraph",
+      "args": [
+        "mcp"
+      ],
+      "cwd": "<path-to-your-project>"
+    }
+  }
+}
+```
+If cwd is not supported:
+```json
+{
+  "mcpServers": {
+    "geraph": {
+      "command": "geraph",
+      "args": [
+        "mcp",
+        "<path-to-your-project>"
+      ]
+    }
+  }
+}
+```
 
 ---
 
-## What files it handles
+
+## What files Geraph handles
 
 | Type | Extensions |
 |------|-----------|
@@ -97,6 +138,14 @@ Remove Geraph context rules and skills from your project.
 | Assets | `.png .jpg .jpeg .svg .gif .webp .mp4 .webm .mp3 .wav` |
 
 AST extraction is done locally via tree-sitter.
+
+---
+
+## Ignoring files
+
+Geraph automatically respects your `.gitignore` file. Any files or folders ignored by Git will be skipped during the scan.
+
+You can also create a `.geraphignore` file in your project root (using the same syntax as `.gitignore`) to explicitly exclude additional files or folders from the knowledge graph.
 
 ---
 
@@ -135,63 +184,6 @@ geraph uninstall [platform]                             # Remove geraph rules fr
 * `--mode <bfs|dfs>`: Traversal algorithm used when traversing context graph (Default: `bfs`).
 * `--depth <number>`: Search crawl depth limit used in graph queries (Default: `3`).
 * `--budget <number>`: Output budget size in tokens to prevent context overflow (Default: `2000`).
-
----
-
-## MCP Server (Recommended)
-
-Geraph features a fully local Model Context Protocol (MCP) server that operates completely over `stdio`. **Using the MCP server is highly recommended** over running terminal CLI commands for LLMs, as it is faster, strictly typed, and avoids terminal parsing bugs.
-
-To expose the Geraph AST memory to an MCP-compatible client (like Cursor or Antigravity IDE), add the following configuration snippet:
-
-**For a project-level local setup:**
-```json
-{
-  "mcpServers": {
-    "geraph": {
-      "command": "geraph",
-      "args": ["mcp"]
-    }
-  }
-}
-```
-
-**For a global setup:**
-If you configure the MCP server globally for your IDE, you must tell the server where your project is located. You can do this by setting the `cwd` field to your project path. If your IDE/platform doesn't support the `cwd` field, you can pass the project path as an argument instead:
-
-```json
-{
-  "mcpServers": {
-    "geraph": {
-      "command": "geraph",
-      "args": [
-        "mcp"
-      ],
-      "cwd": "<path-to-your-project>"
-    }
-  }
-}
-// if cwd not supported
-{
-  "mcpServers": {
-    "geraph": {
-      "command": "geraph",
-      "args": [
-        "mcp",
-        "<path-to-your-project>"
-      ]
-    }
-  }
-}
-```
-
----
-
-## Ignoring files
-
-Geraph automatically respects your `.gitignore` file. Any files or folders ignored by Git will be skipped during the scan.
-
-You can also create a `.geraphignore` file in your project root (using the same syntax as `.gitignore`) to explicitly exclude additional files or folders from the knowledge graph.
 
 ---
 

@@ -48,7 +48,7 @@ Add the following configuration to your MCP-compatible client (e.g. Cursor or An
 ```
 
 **For a global setup:**
-If you configure the MCP server globally for your IDE, you must set the `cwd` field to your project path. If your IDE doesn't support the `cwd` field, you can pass the project path as an argument instead:
+If you configure the MCP server globally for your IDE, you must tell the server where your project is located. You can do this by setting the `cwd` field to your project path. If your IDE/platform doesn't support the `cwd` field, you can pass the project path as an argument instead:
 
 ```json
 {
@@ -62,7 +62,9 @@ If you configure the MCP server globally for your IDE, you must set the `cwd` fi
     }
   }
 }
-// if cwd not supported
+```
+If cwd is not supported:
+```json
 {
   "mcpServers": {
     "geraph": {
