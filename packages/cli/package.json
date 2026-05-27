@@ -1,6 +1,6 @@
 {
   "name": "geraph",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Structural memory for AI agents. Build semantic knowledge graphs from your codebase for surgical code modifications.",
   "main": "dist/index.js",
   "module": "dist/index.js",
@@ -21,6 +21,14 @@
     "ast",
     "knowledge-graph",
     "cli",
+    "agentic-coding",
+    "tree-sitter",
+    "skills",
+    "cursor",
+    "claude",
+    "ai-agents",
+    "semantic-knowledge-graph",
+    "structural-memory",
     "agentic-coding"
   ],
   "author": "Rupam Mondal",

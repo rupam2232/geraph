@@ -22,6 +22,36 @@ const BUILT_INS = new Set([
   "postMessage", "terminate", "info", "warn", "error", "debug", "succeed", "fail", "start", "stop", "command", "option", "action", "description", "parse", "version"
 ]);
 
+function findNearestPackageJson(dir: string): string {
+  let current = dir;
+  while (true) {
+    const candidate = path.join(current, "package.json");
+    if (fs.existsSync(candidate)) return candidate;
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  return "";
+}
+
+function getBasePackageName(importPath: string): string {
+  if (importPath.startsWith(".") || importPath.startsWith("/")) {
+    return importPath;
+  }
+  const normalized = importPath.replace(/^node:/, "");
+  const parts = normalized.split("/");
+  if (normalized.startsWith("@")) {
+    if (parts.length >= 2) {
+      return `${parts[0]}/${parts[1]}`;
+    }
+  } else {
+    if (parts.length >= 1) {
+      return parts[0] as string;
+    }
+  }
+  return importPath;
+}
+
 function resolveImportToNode(importPath: string, sourceFilePath: string, aliases: import("../core/types.js").PathAlias[] = []): string | null {
   const checkCandidates = (resolvedBase: string) => {
     const candidates: string[] = [
@@ -106,6 +136,7 @@ export function parseTypeScript(
     (import_statement (import_clause (identifier) @default_import) source: (string) @import_source)
     (import_statement (import_clause (named_imports (import_specifier name: (identifier) @named_import))) source: (string) @import_source)
     (import_statement source: (string) @import_source)
+    (import) @import_source
     
     (call_expression
       function: (identifier) @req_fn
@@ -196,6 +227,49 @@ export function parseTypeScript(
     for (const capture of match.captures) {
       if (capture.name === "import_source") {
         currentSource = capture.node.text.replace(/['"]/g, "");
+        // If it is a dynamic import, let's also find the variable/pattern it's assigned to
+        if (capture.node.parent?.type === "import_expression" || capture.node.parent?.type === "call_expression") {
+          let parent: Parser.SyntaxNode | null = capture.node.parent;
+          while (parent && parent.type !== "variable_declarator") {
+            parent = parent.parent;
+          }
+          if (parent) {
+            const nameNode = parent.childForFieldName("name");
+            if (nameNode) {
+              if (nameNode.type === "identifier") {
+                importMap.set(nameNode.text, currentSource);
+              } else if (nameNode.type === "object_pattern") {
+                const identifiers: string[] = [];
+                const extractIds = (n: Parser.SyntaxNode) => {
+                  if (n.type === "identifier" || n.type === "shorthand_property_identifier") {
+                    identifiers.push(n.text);
+                  }
+                  for (let i = 0; i < n.namedChildCount; i++) {
+                    const child = n.namedChild(i);
+                    if (child) extractIds(child);
+                  }
+                };
+                extractIds(nameNode);
+                for (const id of identifiers) {
+                  importMap.set(id, currentSource);
+                }
+              }
+            }
+          }
+        }
+      } else if (capture.name === "require_source") {
+        currentSource = capture.node.text.replace(/['"]/g, "");
+        // If it's a require, let's find the variable it's assigned to
+        let parent: Parser.SyntaxNode | null = capture.node.parent; // arguments
+        while (parent && parent.type !== "variable_declarator") {
+          parent = parent.parent;
+        }
+        if (parent) {
+          const nameNode = parent.childForFieldName("name");
+          if (nameNode && nameNode.type === "identifier") {
+            importMap.set(nameNode.text, currentSource);
+          }
+        }
       }
     }
     if (currentSource) {
@@ -239,14 +313,16 @@ export function parseTypeScript(
         if (!importPath.startsWith(".") && !importPath.startsWith("/") && (NODE_CORE_MODULES.has(normalizedPath) || NODE_CORE_MODULES.has(rootModule))) continue;
 
         const resolvedId = resolveImportToNode(importPath, filePath, aliases);
-        const targetNodeId = resolvedId || `import::${importPath}`;
+        const basePackage = getBasePackageName(importPath);
+        const targetNodeId = resolvedId || `import::${basePackage}`;
 
         if (!graph.hasNode(targetNodeId)) {
+          const nearestPkgJson = findNearestPackageJson(path.dirname(filePath));
           graph.addNode(targetNodeId, {
             type: "file",
-            name: resolvedId ? path.basename(resolvedId) : importPath,
-            file: resolvedId || filePath,
-            startLine: resolvedId ? 0 : importLine,
+            name: resolvedId ? path.basename(resolvedId) : basePackage,
+            file: resolvedId || nearestPkgJson || filePath,
+            startLine: 0,
             metadata: resolvedId ? {} : { external: true, callerFile: filePath, callerLine: importLine }
           });
         }
@@ -394,10 +470,18 @@ export function parseTypeScript(
         }
 
         if (importSource) {
+            const baseImportSource = getBasePackageName(importSource);
             const resolvedSource = resolveImportToNode(importSource, filePath, aliases) || importSource;
-            const importNodeId = resolveImportToNode(importSource, filePath, aliases) || `import::${importSource}`;
+            const importNodeId = resolveImportToNode(importSource, filePath, aliases) || `import::${baseImportSource}`;
             if (!graph.hasNode(importNodeId)) {
-                graph.addNode(importNodeId, { type: "file", name: importSource, file: resolvedSource, startLine: 0, metadata: { external: true } });
+                const nearestPkgJson = findNearestPackageJson(path.dirname(filePath));
+                graph.addNode(importNodeId, { 
+                    type: "file", 
+                    name: resolvedSource ? path.basename(resolvedSource) : baseImportSource, 
+                    file: resolvedSource || nearestPkgJson || filePath, 
+                    startLine: 0, 
+                    metadata: { external: true } 
+                });
             }
             if (!graph.hasEdge(importNodeId, targetId)) {
                 graph.addEdge(importNodeId, targetId, { type: "defines", confidence: "EXTRACTED" });
@@ -426,6 +510,12 @@ export function parseTypeScript(
         }
 
         const baseName = objectName || calledName;
+        
+        // If it's a method call (e.g. obj.method()) and the object is neither imported nor defined locally, skip it
+        if (objectName && !importMap.has(objectName) && !localDefinitions.has(objectName)) {
+            continue;
+        }
+
         if (BUILT_INS.has(baseName) && !localDefinitions.has(baseName) && !importMap.has(baseName)) continue;
 
         const callerId = ensureScopeNode(node);
@@ -470,13 +560,15 @@ export function parseTypeScript(
         }
 
         if (importSource) {
+          const baseImportSource = getBasePackageName(importSource);
           const resolvedSource = resolveImportToNode(importSource, filePath, aliases) || importSource;
-          const importNodeId = resolveImportToNode(importSource, filePath, aliases) || `import::${importSource}`;
+          const importNodeId = resolveImportToNode(importSource, filePath, aliases) || `import::${baseImportSource}`;
           if (!graph.hasNode(importNodeId)) {
+            const nearestPkgJson = findNearestPackageJson(path.dirname(filePath));
             graph.addNode(importNodeId, {
               type: "file",
-              name: importSource,
-              file: resolvedSource,
+              name: resolvedSource ? path.basename(resolvedSource) : baseImportSource,
+              file: resolvedSource || nearestPkgJson || filePath,
               startLine: 0,
               metadata: { external: true }
             });

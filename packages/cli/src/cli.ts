@@ -21,7 +21,7 @@ export const program = new Command();
 program
   .name("geraph")
   .description(chalk.blue("Geraph: Structural memory for AI agents"))
-  .version("0.3.0", "-v, --version", "output the current version");
+  .version("0.4.0", "-v, --version", "output the current version");
 
 program
   .command("scan")
