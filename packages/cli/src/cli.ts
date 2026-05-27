@@ -21,7 +21,7 @@ export const program = new Command();
 program
   .name("geraph")
   .description(chalk.blue("Geraph: Structural memory for AI agents"))
-  .version("0.3.0", "-v, --version", "output the current version");
+  .version("0.4.0", "-v, --version", "output the current version");
 
 program
   .command("scan")
@@ -243,6 +243,8 @@ program
     "-t, --type <type>",
     "Filter results by node type (e.g., 'interface', 'class', 'function', 'file')",
   )
+  .option("-p, --page <number>", "Page number for pagination", "1")
+  .option("-l, --limit <number>", "Number of results per page", "20")
   .action(async (term, options) => {
     const spinner = ora({
       text: chalk.gray(`Searching graph for: ${term}...`),
@@ -251,25 +253,32 @@ program
     }).start();
     try {
       const { searchGraph } = await import("./core/query.js");
-      const results = await searchGraph(process.cwd(), term, options.type);
+      const results = await searchGraph(
+        process.cwd(),
+        term,
+        options.type,
+        Number(options.page),
+        Number(options.limit),
+      );
       spinner.stop();
-      if (results.length === 0) {
-        // Use console.error for all human-readable text instead of console.log.
-        // This guarantees that stdout contains ONLY pure JSON data.
-        // This allows AI Agents to cleanly redirect output (e.g. `> .geraph/out.json`) without corrupting the JSON.
-        console.error(chalk.yellow(`No nodes found matching '${term}'`));
+      if (results.data.length === 0) {
+        console.error(
+          chalk.yellow(
+            `No nodes found matching '${term}' on page ${options.page}`,
+          ),
+        );
       } else {
         console.log(JSON.stringify(results, null, 2));
         console.error(
           chalk.gray(
-            `\nFound ${results.length} nodes. Use 'geraph query <id>' to inspect a specific node.`,
+            `\nFound ${results.meta.total} nodes across ${results.meta.totalPages} pages. Displaying page ${results.meta.page}.`,
           ),
         );
       }
     } catch (error) {
       spinner.stop();
       console.error(
-        chalk.red("?? Search failed:"),
+        chalk.red("❌ Search failed:"),
         error instanceof Error ? error.message : String(error),
       );
       process.exit(1);
@@ -277,10 +286,8 @@ program
   });
 
 program
-  .command("query <symbol>")
-  .description(
-    "Query the knowledge graph for a specific symbol's relationships",
-  )
+  .command("node <symbol>")
+  .description("Fetch detailed metadata for a specific node")
   .option(
     "-t, --type <type>",
     "Filter results by node type (e.g., 'interface', 'class', 'function', 'file')",
@@ -291,13 +298,13 @@ program
   )
   .action(async (symbol, options) => {
     const spinner = ora({
-      text: chalk.gray(`Querying relationships for: ${symbol}...`),
+      text: chalk.gray(`Querying node: ${symbol}...`),
       color: "blue",
       spinner: "dots",
     }).start();
     try {
-      const { queryGraph } = await import("./core/query.js");
-      const result = await queryGraph(
+      const { getNode } = await import("./core/query.js");
+      const result = await getNode(
         process.cwd(),
         symbol,
         options.type,
@@ -311,6 +318,250 @@ program
           `Query failed: ${error instanceof Error ? error.message : String(error)}`,
         ),
       );
+      process.exit(1);
+    }
+  });
+
+program
+  .command("neighbors <symbol>")
+  .description("Fetch all incoming and outgoing edges for a specific node")
+  .option(
+    "-t, --type <type>",
+    "Filter results by node type (e.g., 'interface', 'class', 'function', 'file')",
+  )
+  .option(
+    "-s, --source <path>",
+    "Filter results by source file path (e.g., 'auth.ts')",
+  )
+  .option("-p, --page <number>", "Page number for pagination", "1")
+  .option("-l, --limit <number>", "Number of edges per page", "20")
+  .action(async (symbol, options) => {
+    const spinner = ora({
+      text: chalk.gray(`Querying neighbors for: ${symbol}...`),
+      color: "blue",
+      spinner: "dots",
+    }).start();
+    try {
+      const { getNeighbors } = await import("./core/query.js");
+      const result = await getNeighbors(
+        process.cwd(),
+        symbol,
+        options.type,
+        options.source,
+        Number(options.page),
+        Number(options.limit),
+      );
+      spinner.stop();
+      console.log(JSON.stringify(result, null, 2));
+    } catch (error) {
+      spinner.fail(
+        chalk.red(
+          `Query failed: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      );
+      process.exit(1);
+    }
+  });
+
+program
+  .command("path <source> <target>")
+  .description(
+    "Find the shortest path between two nodes using fuzzy symbol/ID lookup",
+  )
+  .option("-m, --max-hops <number>", "Maximum hops to consider", "8")
+  .action(async (source, target, options) => {
+    const spinner = ora({
+      text: chalk.gray(`Finding shortest path...`),
+      color: "blue",
+      spinner: "dots",
+    }).start();
+    try {
+      const { shortestPath } = await import("./core/query.js");
+      const maxHops = Number(options.maxHops || 8);
+      const result = await shortestPath(process.cwd(), source, target, maxHops);
+      spinner.stop();
+      console.log(result);
+    } catch (error) {
+      spinner.fail(
+        chalk.red(
+          `Path failed: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      );
+      process.exit(1);
+    }
+  });
+
+program
+  .command("god")
+  .description(
+    "Return the most connected nodes — the core architectural pillars of the codebase",
+  )
+  .option("-p, --page <number>", "Page number for pagination", "1")
+  .option("-l, --limit <number>", "Number of results per page", "10")
+  .action(async (options) => {
+    const spinner = ora({
+      text: chalk.gray(`Fetching core nodes...`),
+      color: "blue",
+      spinner: "dots",
+    }).start();
+    try {
+      const { getGodNodes } = await import("./core/query.js");
+      const result = await getGodNodes(
+        process.cwd(),
+        Number(options.page),
+        Number(options.limit),
+      );
+      spinner.stop();
+      console.log(result);
+    } catch (error) {
+      spinner.fail(
+        chalk.red(
+          `Failed to fetch god nodes: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      );
+      process.exit(1);
+    }
+  });
+
+program
+  .command("community <id>")
+  .description("Get all nodes in a community by community ID")
+  .option("-p, --page <number>", "Page number for pagination", "1")
+  .option("-l, --limit <number>", "Number of results per page", "20")
+  .action(async (id, options) => {
+    const spinner = ora({
+      text: chalk.gray(`Fetching nodes in community ${id}...`),
+      color: "blue",
+      spinner: "dots",
+    }).start();
+    try {
+      const { getCommunityNodes } = await import("./core/query.js");
+      const result = await getCommunityNodes(
+        process.cwd(),
+        Number(id),
+        Number(options.page),
+        Number(options.limit),
+      );
+      spinner.stop();
+      console.log(result);
+    } catch (error) {
+      spinner.fail(
+        chalk.red(
+          `Failed to fetch community: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      );
+      process.exit(1);
+    }
+  });
+
+program
+  .command("surprises")
+  .description(
+    "Discover surprising cross-community couplings that link otherwise independent modules",
+  )
+  .option("-p, --page <number>", "Page number for pagination", "1")
+  .option("-l, --limit <number>", "Number of results per page", "20")
+  .action(async (options) => {
+    const spinner = ora({
+      text: chalk.gray(`Querying surprising connections...`),
+      color: "blue",
+      spinner: "dots",
+    }).start();
+    try {
+      const { getSurprisingConnections } = await import("./core/query.js");
+      const result = await getSurprisingConnections(
+        process.cwd(),
+        Number(options.page),
+        Number(options.limit),
+      );
+      spinner.stop();
+      console.log(result);
+    } catch (error) {
+      spinner.fail(
+        chalk.red(
+          `Failed to fetch surprises: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      );
+      process.exit(1);
+    }
+  });
+
+program
+  .command("query <symbol-or-question>")
+  .description(
+    "Search the AST graph using BFS or DFS traversal with keyword or natural language support, returning a compact context representation",
+  )
+  .option("-m, --mode <mode>", "Traversal mode (bfs or dfs)", "bfs")
+  .option("-d, --depth <number>", "Traversal depth limit", "3")
+  .option("-b, --budget <number>", "Estimated output token limit", "2000")
+  .action(async (symbolOrQuestion, options) => {
+    const spinner = ora({
+      text: chalk.gray(`Traversing AST graph from ${symbolOrQuestion}...`),
+      color: "blue",
+      spinner: "dots",
+    }).start();
+    try {
+      const { queryGraph } = await import("./core/query.js");
+      const result = await queryGraph(
+        process.cwd(),
+        symbolOrQuestion,
+        options.mode as "bfs" | "dfs",
+        Number(options.depth),
+        Number(options.budget),
+      );
+      spinner.stop();
+      console.log(result);
+    } catch (error) {
+      spinner.fail(
+        chalk.red(
+          `Query failed: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      );
+      process.exit(1);
+    }
+  });
+
+program
+  .command("stats")
+  .description(
+    "Return summary statistics of the graph: node count, edge count, community count, and extraction confidence percentage breakdown",
+  )
+  .action(async () => {
+    const spinner = ora({
+      text: chalk.gray(`Querying graph statistics...`),
+      color: "blue",
+      spinner: "dots",
+    }).start();
+    try {
+      const { getGraphStats } = await import("./core/query.js");
+      const result = await getGraphStats(process.cwd());
+      spinner.stop();
+      console.log(result);
+    } catch (error) {
+      spinner.fail(
+        chalk.red(
+          `Failed to fetch stats: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      );
+      process.exit(1);
+    }
+  });
+
+program
+  .command("mcp [dir]")
+  .description(
+    "Starts the JSON-RPC Model Context Protocol (MCP) server over stdio",
+  )
+  .action(async (dir) => {
+    try {
+      const { loadGraph } = await import("./core/query.js");
+      const targetDir = dir ? path.resolve(process.cwd(), dir) : process.cwd();
+      const graph = loadGraph(targetDir);
+
+      const { runMcpServer } = await import("./core/mcp.js");
+      await runMcpServer(graph, targetDir);
+    } catch (err) {
+      console.error(err instanceof Error ? err.message : String(err));
       process.exit(1);
     }
   });

@@ -199,12 +199,10 @@ export function findSurprisingConnections(
 
     // Non-obvious edge types are more surprising
     if (
-      edgeData.type === "references" ||
-      edgeData.type === "extends" ||
-      edgeData.type === "implements"
+      edgeData.type === "references"
     ) {
       score += 2;
-      reasons.push(`${edgeData.type} relationship (deep OOP coupling)`);
+      reasons.push(`${edgeData.type} relationship (deep AST coupling)`);
     }
 
     // Peripheral → hub: low-degree node talking to high-degree one

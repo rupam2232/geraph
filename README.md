@@ -42,7 +42,7 @@ That's it. You get three files:
 └── graph.json       the full graph — query it anytime for surgical code modifications
 ```
 
-Once the scan is complete, you can use the `/geraph` command in your AI assistant's chat to ask architectural questions or assign codebase-wide tasks. The assistant will utilize the `geraph query` command behind the scenes to fetch precise architectural context.
+Once the scan is complete, you can use the `/geraph` command in your AI assistant's chat to ask architectural questions or assign codebase-wide tasks. The assistant will utilize the `geraph node` and `geraph neighbors` commands behind the scenes to fetch precise architectural context.
 
 ---
 
@@ -103,16 +103,87 @@ AST extraction is done locally via tree-sitter.
 ## Common commands
 
 ```bash
-geraph scan                                    # build graph for the current folder
-geraph search '<term>' [--type <type>]         # discover multiple nodes matching a term
-geraph query '<symbol>' [--type <type>] [--source <file>] # instant lookup for a symbol's dependencies
-geraph install [platform]                      # install geraph rules for a platform
-geraph uninstall [platform]                    # remove geraph rules from a project
+# 1. AST Graph Management & Verification
+geraph scan                                             # Build/rebuild the knowledge graph for the current folder
+geraph stats                                            # Print summary statistics (node/edge count & confidence breakdown)
+
+# 2. Structural Codebase Exploration & Searching
+geraph search <term> [--type <type>] [--page <p>] [--limit <l>] # Discover multiple nodes matching a partial term or path
+geraph node <symbol> [--type <type>] [--source <file>]  # Fetch complete metadata for a specific node
+geraph neighbors <symbol> [--type <type>] [--source <file>] [--page <p>] [--limit <l>] # Trace incoming/outgoing edges
+
+# 3. Pathfinding & Context Traversal
+geraph path <source> <target> [--max-hops <hops>]       # Find the shortest undirected relationship chain between nodes
+geraph query <symbol-or-question> [--mode <bfs|dfs>] [--depth <d>] [--budget <b>] # Crawl AST graph via keywords or natural question
+
+# 4. Core Abstractions & Analysis
+geraph god [--page <p>] [--limit <l>]                  # Fetch the most-connected nodes (architectural pillars)
+geraph community <id> [--page <p>] [--limit <l>]        # Fetch all nodes grouped inside a specific Louvain community
+geraph surprises [--page <p>] [--limit <l>]            # Fetch surprising cross-community bridges
+
+# 5. Platforms Setup
+geraph install <platform>                               # Install geraph context rules/skills for an IDE or assistant
+geraph uninstall [platform]                             # Remove geraph rules from a project (omit platform for all)
 ```
 
-**Options for Search & Query:**
-- `--type <type>`: Filter results by node type (e.g., `interface`, `class`, `function`, `file`).
-- `--source <file>`: (*Query only*) Filter results by the source file path to resolve ambiguous symbols.
+**Common Options & Flags:**
+* `-t, --type <type>`: Filter results by AST node type (e.g. `file`, `class`, `function`, `interface`, `type`, `enum`).
+* `-s, --source <file>`: Filter/disambiguate results by matching containing source file path suffix.
+* `-p, --page <number>`: The page index to fetch (Default: `1`).
+* `-l, --limit <number>`: Items per page (Default: `20` for neighbors/search, `10` for god nodes).
+* `-m, --max-hops <number>`: Maximumhops to consider when tracing shortest path (Default: `8`).
+* `--mode <bfs|dfs>`: Traversal algorithm used when traversing context graph (Default: `bfs`).
+* `--depth <number>`: Search crawl depth limit used in graph queries (Default: `3`).
+* `--budget <number>`: Output budget size in tokens to prevent context overflow (Default: `2000`).
+
+---
+
+## MCP Server (Recommended)
+
+Geraph features a fully local Model Context Protocol (MCP) server that operates completely over `stdio`. **Using the MCP server is highly recommended** over running terminal CLI commands for LLMs, as it is faster, strictly typed, and avoids terminal parsing bugs.
+
+To expose the Geraph AST memory to an MCP-compatible client (like Cursor or Antigravity IDE), add the following configuration snippet:
+
+**For a project-level local setup:**
+```json
+{
+  "mcpServers": {
+    "geraph": {
+      "command": "geraph",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+**For a global setup:**
+If you configure the MCP server globally for your IDE, you must tell the server where your project is located. You can do this by setting the `cwd` field to your project path. If your IDE/platform doesn't support the `cwd` field, you can pass the project path as an argument instead:
+
+```json
+{
+  "mcpServers": {
+    "geraph": {
+      "command": "geraph",
+      "args": [
+        "mcp"
+      ],
+      "cwd": "<path-to-your-project>"
+    }
+  }
+}
+// if cwd not supported
+{
+  "mcpServers": {
+    "geraph": {
+      "command": "geraph",
+      "args": [
+        "mcp",
+        "<path-to-your-project>"
+      ]
+    }
+  }
+}
+```
 
 ---
 
@@ -139,5 +210,6 @@ For small to medium-sized projects, we recommend committing the `.geraph/` folde
 ## Privacy
 
 - **Local Extraction**: All parsing (AST) and graph building happens entirely on your local machine.
+- **Offline MCP Server**: The MCP server reads the generated `.geraph/graph.json` offline, meaning **your code never leaves your system**. There are no API keys or cloud processing.
 - **Zero Cloud**: Your code never leaves your system. Everything happens inside your machine fully locally. No code, snippets, or metadata are ever sent to a server. There is no Geraph server.
 - **No Telemetry**: No usage tracking, no analytics.

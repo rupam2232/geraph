@@ -1,117 +1,251 @@
 ---
 name: geraph
-description: "Structural Memory for AI Agents. Navigate the codebase via AST graph."
+description: "Structural Memory for AI Agents. Navigate and query the codebase via AST-based semantic knowledge graph."
 trigger: /geraph
 ---
 
 # Geraph Operational Manual
 
-Geraph is a structural memory engine that tracks dependencies, function calls, imports, and historical context (Git commits) across the codebase. It builds a graph mapping all relationships without executing any code.
+Geraph is a structural memory engine that tracks codebase abstractions, function calls, module imports, and historical context (Git commits). It constructs a semantic knowledge graph mapping all dependencies without executing any code.
 
-## What You Must Do When Invoked
+As an AI agent, you MUST follow this operational manual to navigate the codebase using Geraph.
 
-When you need to understand the architecture, find where a component is, or trace dependencies, follow this strict protocol:
+---
 
-### Step 1: Read the Global Architecture Report
-Before answering architecture or codebase questions, **always read `.geraph/GRAPH_REPORT.md` first**. It contains project stats, core architectural pillars ("God Nodes"), and community clustering. 
+## 1. Primary Directives & Workflow
 
-### Step 2: Use `search` for Fuzzy Discovery
-If you don't know the exact ID or exact name of a symbol, you MUST use `search` first.
-```bash
-geraph search '<term>' [--type <type>]
+When you need to understand the architecture, locate code definitions, trace dependencies, or perform impact analysis, execute these steps:
+
+### Step 0: MCP First, CLI as Fallback
+* **MCP Server (Recommended):** If the Geraph MCP server is active, always prioritize Geraph MCP tools and resources over terminal commands.
+* **CLI Wrapper:** If MCP is not available, execute the equivalent terminal command: `geraph <command>`.
+* **Global Install Rule:** If running any Geraph CLI command returns a 'command not found' error, you MUST first install it globally using:
+  ```bash
+  npm install -g geraph
+  ```
+* **Standardized Terminal Bug Fallback:** If the Geraph CLI commands continuously fail to run (e.g. CLI crashes, execution environments fail — **not** "symbol not found" errors):
+  1. Immediately check if Geraph MCP is configured. If it is, switch entirely to MCP tools.
+  2. If Geraph MCP is **not** configured, immediately stop your work and ask the user to set up the MCP server by following the official documentation at: [https://github.com/rupam2232/geraph#mcp-server-recommended](https://github.com/rupam2232/geraph#mcp-server-recommended)
+  3. **CRITICAL:** Do NOT fallback to default general search tools like `grep`, `rg`, or `find`. Halt execution until MCP is set up.
+
+### Step 1: Read the Global Architecture Report / Load Resources
+Before answering architecture or codebase questions, **always load the Geraph Report first**. It provides a compact structural overview, including the top files, communities, god nodes, surprising couplings, and temporal commit history.
+* **Via MCP:** Read the `geraph://report` resource.
+* **Via CLI:** Read the `.geraph/GRAPH_REPORT.md` file directly.
+
+### Critical Rules
+> [!IMPORTANT]
+> **NEVER Read Raw Graph Files:** You MUST never attempt to view or read the massive `.geraph/graph.json` or `.geraph/graph.html` files directly. Doing so will instantly overflow your context window, bloat token consumption, and freeze or crash your session. Use Geraph's tools or resources to inspect the graph.
+
+> [!IMPORTANT]
+> **NEVER Read Cache Files:** You MUST never try to read any files inside the `.geraph/cache` directory (such as `git-cache.json`). These files store massive raw metadata indexes (e.g. Git blame history) that will instantly blow up your context window, waste millions of tokens, and crash your session.
+
+> [!IMPORTANT]
+> **Scan on Modification:** Immediately after making any code changes, creating/deleting files, or committing code, you MUST run the `scan_graph` MCP tool or the `geraph scan` CLI command to rebuild the AST graph and sync Geraph's memory with the active state of the code.
+
+---
+
+## 2. Fuzzy Search & Node ID Resolution Mechanics
+
+To choose the correct search terms and resolve nodes successfully, you must understand how Geraph names nodes and resolves fuzzy inputs:
+
+### A. Deterministic Node ID Format
+Every node in Geraph has a unique, deterministic ID generated as follows:
+* **For a File Node:** The normalized absolute or relative workspace path to the file.
+  - *Example:* `services/billing/invoicing.ts` (or `E:\coding\project\services\billing\invoicing.ts`)
+* **For a Symbol/Entity Node (class, function, interface, etc.):** The containing file path followed by `::` and the symbol name.
+  - *Format:* `{containing_file_path}::{symbolName}`
+  - *Example:* `services/billing/invoicing.ts::InvoiceProcessor`
+
+### B. Fuzzy Resolution Protocol
+When you pass a search string to `shortest_path` (or `geraph path`), `get_node` (or `geraph node`), `get_neighbors` (or `geraph neighbors`), or `query_graph` (or `geraph query`), Geraph resolves it using a multi-tiered fuzzy search:
+1. **Exact ID Match:** Matches the exact qualified ID first (e.g. `services/billing/invoicing.ts::InvoiceProcessor`).
+2. **Exact Symbol Attribute Match:** Matches the raw name attribute exactly (e.g. matching `InvoiceProcessor` to `attr.name === "InvoiceProcessor"`).
+3. **Suffix Matching:** Resolves inputs by checking if the Node ID ends with `/{symbol}` (for files) or `::{symbol}` (for members), e.g. querying `invoicing.ts::InvoiceProcessor` or `invoicing.ts/InvoiceProcessor` will resolve successfully.
+4. **Case-Insensitive Match:** Repeats all matching tiers case-insensitively (e.g. matching `invoiceprocessor` to `InvoiceProcessor`).
+5. **Optional Filters:** In all matching phases, Geraph optionally filters results by AST node `type` (e.g., `function`) and/or containing `source` file path segment if those parameters are explicitly provided.
+
+### C. Geraph MCP Resource Pointers
+If MCP is active, you can load these read-only URIs directly as resources to quickly get high-level overviews without running tools:
+* `geraph://report` : The complete `.geraph/GRAPH_REPORT.md` file.
+* `geraph://stats` : General stats (node/edge/community counts and confidence breakdown).
+* `geraph://god-nodes` : Top 10 most-connected core abstractions.
+* `geraph://surprises` : Top 10 surprising cross-community couplings.
+* `geraph://audit` : Extraction confidence audit counts.
+
+---
+
+## 3. Navigating with Pagination
+
+To avoid context-window bloat, Geraph enforces strict pagination on all list-based queries. Every paginated tool/command accepts **two optional parameters**:
+* `page`: The page number to retrieve (Default: `1`).
+* `limit`: The number of items to show per page (Default: `20` for neighbors/searches, `10` for god nodes).
+
+### Understanding the Pagination Payload
+When a query returns, inspect the metadata to determine if you need to fetch more pages:
+
+#### For JSON Responses (e.g., `search_graph` or `get_neighbors` MCP/CLI):
+Look at the `meta` block:
+```json
+"meta": {
+  "page": 1,
+  "limit": 20,
+  "total": 97,
+  "totalPages": 5
+}
 ```
-- **Inputs**: Use a broad concept, a partial filename, or a partial function name. For example: `search 'auth'`, `search 'database'`, `search 'User'`.
-- **Options**: You can filter by `--type file` or `--type function` if you know what you are looking for.
-- **Output**: Returns a lightweight list of matching Node IDs, sorted by significance. 
+* **`page`:** The current page you are viewing.
+* **`totalPages`:** The total pages available. If `page < totalPages`, you must make subsequent queries with `page: page + 1` to read the remaining data.
 
-### Step 3: Use `query` for Deep Inspection
-Once you have found the exact Node ID or exact Symbol Name from Step 2 (or if the user explicitly provided one), use `query` to fetch its full dependencies.
-```bash
-geraph query '<symbol_or_id>' [--type <type>] [--source <file>]
-```
-- **Inputs**: The exact Node ID (e.g., `src/auth/session.ts::ValidateToken`) or the exact symbol name (e.g., `ValidateToken`). If you are exploring a specific file, you can query its filepath directly (e.g., `geraph query 'src/app.ts' --type file`).
-- **Options**:
-  - `--type <type>` (e.g., `file`, `function`, `class`, `interface`, `intent`). Use this to resolve naming conflicts (e.g., if there is a function and an interface both named "User").
-  - `--source <file>` (e.g., `src/auth/session.ts`). Use this if you only know the symbol name, to ensure Geraph finds the definition in the correct file.
-- **Why use options?**: Always use `--type` and `--source` if you know them. They strictly reduce token bloat and guarantee you get the exact node you want.
-
-### Step 4: Trace the Context ("The Why")
-When you run `query`, you will see `incoming` and `outgoing` edges. 
-- **Impact Analysis**: Use `incoming` edges to see who depends on this node.
-- **Dependencies**: Use `outgoing` edges to see what this node uses.
-- **Historical Context ("The Why")**: If you see an `intent` type node connected to your target, **query that `intent` node**. Look at its `metadata.message`. This is a Git commit message that explains *why* the code exists or was changed.
-
-### Step 5: Keep the Graph Current
-Geraph must stay in sync with the codebase.
-- You MUST run `geraph scan` after you modify any code files.
-- You MUST run `geraph scan` after committing a change to the repository.
+#### For Formatted Text Responses (e.g. `god_nodes`, `get_community`, `get_surprises`):
+Inspect the bracketed line at the very bottom:
+`[Page 1 of 5 | Total: 97 nodes]`
+* If the page count is greater than 1, you must increment the `page` argument in your next tool call to view the next chunk of nodes.
 
 ---
 
-## CRITICAL RULES
+## 4. Tool & CLI Command Reference
 
-1. **NEVER read `.geraph/graph.json` directly.** It is massive and will overflow your context window. Always use the CLI.
-2. **NO EXTRA FLAGS**: There are NO extra or hidden options for `search` or `query`. DO NOT hallucinate flags like `--limit` or `--dfs`. Only use `--type` and `--source`.
-3. **COMMAND NOT FOUND**: If the terminal returns a 'command not found' error, you MUST install it globally using `npm install -g geraph` before proceeding.
-4. **TERMINAL OUTPUT BUG**: If your terminal fails to capture stdout (e.g., it hangs or returns "No output"), DO NOT GIVE UP. Redirect the output to a file: `geraph query 'Symbol' > .geraph/out.json`, then read that file.
-5. **NEVER use `grep`, `rg`, or `find`** for architecture questions when Geraph is available.
+All query parameters are optional and have robust defaults. If you omit an argument, the server resolves it automatically.
+
+### A. Core Discovery & Abstractions
+
+#### 1. Fuzzy Search
+Search for nodes by partial symbol name or file path.
+* **MCP Tool:** `search_graph`
+  - *Parameters:* `name` (Required), `type` (Optional), `page` (Optional), `limit` (Optional)
+* **CLI Command:** `geraph search <term>`
+  - *Syntax:* `geraph search <term> [--type <type>] [--page <number>] [--limit <number>]`
+  - *Example:* `geraph search Invoice --type class --page 1 --limit 10`
+* **Returned Fields & Meaning:**
+  - `id`: The unique absolute node ID (use this for subsequent deep inspection calls).
+  - `name`: Raw symbol name.
+  - `type`: Node category (e.g., `class`, `function`).
+  - `file`: Containing file path.
+  - `links`: Connection count (degree). High degree = high architectural importance.
+
+#### 2. God Nodes
+Find the most connected real nodes in the codebase (excluding noise).
+* **MCP Tool:** `god_nodes`
+  - *Parameters:* `page` (Optional), `limit` (Optional, Default: 10)
+* **CLI Command:** `geraph god`
+  - *Syntax:* `geraph god [--page <number>] [--limit <number>]`
+* **Output Format:**
+  `  {index}. {symbol_name} [id: {node_id}] - {degree} edges`
+
+#### 3. Community Nodes
+Fetch all nodes clustered within a specific Louvain community ID.
+* **MCP Tool:** `get_community`
+  - *Parameters:* `community_id` (Required), `page` (Optional), `limit` (Optional, Default: 20)
+* **CLI Command:** `geraph community <id>`
+  - *Syntax:* `geraph community <id> [--page <number>] [--limit <number>]`
+* **Output Format:**
+  `  {symbol_name} [{containing_file_path}]`
+
+#### 4. Surprising Connections
+Fetch surprising cross-community couplings that link independent subsystems.
+* **MCP Tool:** `get_surprises`
+  - *Parameters:* `page` (Optional), `limit` (Optional, Default: 20)
+* **CLI Command:** `geraph surprises`
+  - *Syntax:* `geraph surprises [--page <number>] [--limit <number>]`
+* **Output Format:**
+  `  {source_name} <-> {target_name} [{edge_type}] - {explanation}`
 
 ---
 
-## JSON Response Interpretation
+### B. Deep Inspection & Traversal
 
-**`search` output**: Returns an array of matching node objects.
-- `id`: The unique node identifier. Use this exact string for subsequent `query` calls.
-- `name`: The human-readable name.
-- `type`: The node type (see Glossary below).
-- `file`: The source file.
-- `links`: Total connections. Higher means more architecturally significant.
+#### 5. Get Node Detail
+Fetch metadata for a single specific symbol or file path.
+* **MCP Tool:** `get_node`
+  - *Parameters:* `symbol` (Required), `type` (Optional), `source` (Optional)
+* **CLI Command:** `geraph node <symbol>`
+  - *Syntax:* `geraph node <symbol> [--type <type>] [--source <path>]`
+  - *Example:* `geraph node InvoiceProcessor --type class --source invoicing.ts`
+* **Returned Fields & Meaning:**
+  - `id`: Unique absolute identifier.
+  - `name`: Symbol name.
+  - `type`: Node category.
+  - `file`: Containing file path.
+  - `line`: Starting line number in the source file.
+  - `links.incoming` / `links.outgoing`: Direct dependency counts.
+  - `metadata.doc`: Extracted JSDoc/comments (contains design rationale).
+  - `metadata.community`: Louvain community ID (cluster subsystem).
 
-**`query` output**: Returns a detailed object with `target`, `incoming`, and `outgoing`:
-- `target`: The queried node's full details:
-  - `id`, `name`, `type`, `file`, `line`: Identity and location.
-  - `metadata.doc`: Contains extracted JSDoc/comments. Read this to understand the purpose and intent of the symbol.
-  - `metadata.deprecated`: Boolean flag. If `true`, this symbol is marked `@deprecated`.
-  - `metadata.message`: (*Only on `intent` type nodes*) The Git commit message explaining why this node was created or changed.
-  - `metadata.author`, `metadata.date`: (*Only on `intent` type nodes*) Commit author and timestamp.
-  - `links.incoming` / `links.outgoing`: Count of connections in each direction.
-- `incoming`: Array of edges pointing **to** this node. Each entry has `source` (the neighbor node), `relation` (edge type), and `confidence`. Use this for **Impact Analysis** — these are the entities that depend on and will break if you change the target.
-- `outgoing`: Array of edges pointing **out** from this node. Each entry has `target` (the neighbor node), `relation`, and `confidence`. Use this to see what the node **depends on** — what it calls, imports, or references.
+#### 6. Get Neighbors
+Trace all incoming and outgoing dependencies of a symbol.
+* **MCP Tool:** `get_neighbors`
+  - *Parameters:* `symbol` (Required), `type` (Optional), `source` (Optional), `page` (Optional), `limit` (Optional, Default: 20)
+* **CLI Command:** `geraph neighbors <symbol>`
+  - *Syntax:* `geraph neighbors <symbol> [--type <type>] [--source <path>] [--page <number>] [--limit <number>]`
+* **Returned Fields & Meaning:**
+  - `incoming[]`: Symbols that call, import, or extend this target. Use this for **Impact Analysis** (what will break if you modify this node).
+  - `outgoing[]`: Symbols this target calls, imports, or references. Use this to trace **dependency requirements**.
+  - `relation`: Nature of connection (e.g. `calls`, `imports`, `defines`).
+  - `confidence`: Confidence levels (`EXTRACTED` = 100% AST certain; `INFERRED` = high structural heuristic probability; `AMBIGUOUS` = requires review).
 
-### Query Resolution Priority
-When you `query` a symbol name (e.g., `geraph query 'userState'`), Geraph resolves it in this strict order:
-1. **Exact ID Match**: Perfect match on the unique Node ID.
-2. **Case-Sensitive Match**: Matches the exact capitalization (finds the variable `userState` but ignores the interface `UserState`).
-3. **Case-Insensitive Fallback**: If no exact case match exists, it returns the case-insensitive match (returns the interface `UserState`).
+#### 7. Shortest Path
+Find the shortest chain of code relationships linking two nodes.
+* **MCP Tool:** `shortest_path`
+  - *Parameters:* `source` (Required), `target` (Required), `max_hops` (Optional, Default: 8)
+* **CLI Command:** `geraph path <source> <target>`
+  - *Syntax:* `geraph path <source> <target> [--max-hops <number>]`
+  - *Example:* `geraph path InvoiceProcessor DatabaseClient --max-hops 5`
+* **Output Format:** Shows hops and directions between nodes:
+  `Shortest path (H hops): SourceSymbol --imports--> Middleware <--calls-- DestinationSymbol`
+
+#### 8. Compact Graph Traversal
+Runs a localized BFS/DFS crawl fanning out from the most relevant seed nodes to return a compact context map. It supports fuzzy symbol names, lists of keywords, or full natural language questions.
+* **MCP Tool:** `query_graph`
+  - *Parameters:* `symbol` or `question` (Required), `mode` (Optional, Default: 'bfs'), `depth` (Optional, Default: 3), `token_budget` (Optional, Default: 2000)
+* **CLI Command:** `geraph query <symbol-or-question>`
+  - *Syntax:* `geraph query <symbol-or-question> [--mode <bfs|dfs>] [--depth <number>] [--budget <number>]`
+  - *Example:* `geraph query "how does InvoiceProcessor write to the database" --depth 2 --budget 1500`
+* **Output Format:** Compact text map listing traversed nodes (`NODE`) and edges (`EDGE`):
+  `NODE server.js [src=packages/services/server.js loc=0 community=2]`
+  `EDGE server.js --imports--> invoicing.py`
+
+#### 9. Graph Statistics
+Get summary statistics of the graph (node/edge/community counts and confidence breakdown).
+* **MCP Tool:** `graph_stats`
+  - *Parameters:* None
+* **CLI Command:** `geraph stats`
+  - *Syntax:* `geraph stats`
+* **Output Format:**
+  `Nodes: 256`
+  `Edges: 798`
+  `Communities: 9`
+  `EXTRACTED: 80%`
+  `INFERRED: 15%`
+  `AMBIGUOUS: 5%`
+
+#### 10. Rebuild Graph
+Triggers a full scan of the directory to rebuild the knowledge graph.
+* **MCP Tool:** `scan_graph`
+  - *Parameters:* None
+* **CLI Command:** `geraph scan`
+  - *Syntax:* `geraph scan`
 
 ---
 
-## Geraph Glossary
+## 5. Geraph Glossary
 
-Use this glossary to understand the types of nodes and edges in the graph, and to accurately choose your `--type` flag for queries.
+### AST Node Types
+* `file`: A source code file.
+* `function`: A function, method, or arrow function definition.
+* `class`: A class definition.
+* `interface` / `type` / `enum`: TypeScript definition declarations.
+* `intent`: A Git commit explaining why a node exists (query its `metadata.message` for history).
 
-### Node Types
-| Type | Description |
-|---|---|
-| `file` | A source code file. |
-| `function` | A standard function, method, or arrow function. |
-| `class` | A class definition. |
-| `interface`/`type`/`enum`| TypeScript type definitions. |
-| `intent` | A Git commit explaining why a node exists. |
-
-### Edge Types (`relation`)
-| Relation | Description |
-|---|---|
-| `imports` | File A depends on File B. |
-| `calls` | Function A executes Function B. |
-| `defines` | A file contains a function/class. |
-| `references` | A function uses a specific type or interface. |
-| `explains` | A Git commit (`intent` node) provides historical context for a specific code node. |
+### AST Edge Types (`relation`)
+* `imports`: File A depends on File B.
+* `calls`: Function/Method A invokes Function/Method B.
+* `defines`: File A contains or defines symbol B.
+* `references`: A symbol uses a type, interface, or variable.
+* `explains`: A Git commit (`intent` node) provides historical context for a specific code node.
 
 ### Confidence Scores
 Every edge has a `confidence` level:
-| Confidence | Description |
-|---|---|
-| `EXTRACTED` | 100% deterministic. Found directly by the AST parser (e.g., an explicit function call). |
-| `INFERRED` | High probability. Deduced via structural heuristics or indirect relationships. |
-| `AMBIGUOUS` | Uncertain connection. Requires human/agent verification. |
+* `EXTRACTED`: 100% deterministic AST parser extraction (e.g. direct function call or explicit import statement).
+* `INFERRED`: High probability structural heuristic coupling.
+* `AMBIGUOUS`: Uncertain connection that needs manual verification.

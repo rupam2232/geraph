@@ -13,10 +13,7 @@ export type EdgeType =
   | "imports"
   | "calls"
   | "defines"
-  | "superseded_by"
   | "explains"
-  | "extends"
-  | "implements"
   | "references";
 export type ConfidenceType = "EXTRACTED" | "INFERRED" | "AMBIGUOUS";
 
