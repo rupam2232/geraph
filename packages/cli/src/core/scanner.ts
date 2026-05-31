@@ -13,6 +13,7 @@ const createIgnore = (
 const SUPPORTED_EXTENSIONS = [
   // Code & Data
   'ts', 'js', 'tsx', 'jsx', 'json', 'md',
+  'py', 'java', 'go', 'rs', 'cpp', 'cc', 'cxx', 'h', 'hpp',
   // Images
   'png', 'jpg', 'jpeg', 'svg', 'gif', 'webp',
   // Video & Audio

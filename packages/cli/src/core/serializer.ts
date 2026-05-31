@@ -245,6 +245,9 @@ export function exportGraphHtml(
     type: 0,
     interface: 0,
     enum: 0,
+    struct: 0,
+    trait: 0,
+    macro: 0,
   };
 
   // Calculate node degrees for sizing and label logic
@@ -270,6 +273,9 @@ export function exportGraphHtml(
     type: "#B07AA1",
     interface: "#B07AA1",
     enum: "#59A14F",
+    struct: "#E15759",
+    trait: "#76B7B2",
+    macro: "#EDC948",
   };
 
   const RAW_NODES = graph.nodes().map((n) => {
@@ -407,6 +413,9 @@ export function exportGraphHtml(
     <div id="legend">
       <div class="legend-item ${counts.file ? "" : "hidden"}"><div class="legend-item-left"><div class="legend-dot" style="background: ${COLORS.file};"></div> File</div><span class="legend-count">${counts.file || 0}</span></div>
       <div class="legend-item ${counts.class ? "" : "hidden"}"><div class="legend-item-left"><div class="legend-dot" style="background: ${COLORS.class};"></div> Class</div><span class="legend-count">${counts.class || 0}</span></div>
+      <div class="legend-item ${counts.struct ? "" : "hidden"}"><div class="legend-item-left"><div class="legend-dot" style="background: ${COLORS.struct};"></div> Struct</div><span class="legend-count">${counts.struct || 0}</span></div>
+      <div class="legend-item ${counts.trait ? "" : "hidden"}"><div class="legend-item-left"><div class="legend-dot" style="background: ${COLORS.trait};"></div> Trait</div><span class="legend-count">${counts.trait || 0}</span></div>
+      <div class="legend-item ${counts.macro ? "" : "hidden"}"><div class="legend-item-left"><div class="legend-dot" style="background: ${COLORS.macro};"></div> Macro</div><span class="legend-count">${counts.macro || 0}</span></div>
       <div class="legend-item ${counts.function ? "" : "hidden"}"><div class="legend-item-left"><div class="legend-dot" style="background: ${COLORS.function};"></div> Function</div><span class="legend-count">${counts.function || 0}</span></div>
       <div class="legend-item ${counts.type || counts.interface ? "" : "hidden"}"><div class="legend-item-left"><div class="legend-dot" style="background: ${COLORS.type};"></div> Type/Interface</div><span class="legend-count">${(counts.type || 0) + (counts.interface || 0)}</span></div>
       <div class="legend-item ${counts.enum ? "" : "hidden"}"><div class="legend-item-left"><div class="legend-dot" style="background: ${COLORS.enum};"></div> Enum</div><span class="legend-count">${counts.enum || 0}</span></div>

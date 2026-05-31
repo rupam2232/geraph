@@ -233,8 +233,9 @@ Triggers a full scan of the directory to rebuild the knowledge graph.
 ### AST Node Types
 * `file`: A source code file.
 * `function`: A function, method, or arrow function definition.
-* `class`: A class definition.
-* `interface` / `type` / `enum`: TypeScript definition declarations.
+* `class` / `struct`: A class or struct definition.
+* `interface` / `type` / `enum` / `trait`: Type, interface, enum, or trait declarations.
+* `macro`: A macro definition.
 * `intent`: A Git commit explaining why a node exists (query its `metadata.message` for history).
 
 ### AST Edge Types (`relation`)
