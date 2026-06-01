@@ -11,18 +11,12 @@ export function parseMarkdown(
   // Simple approximation of word count
   const wordCount = content.split(/\s+/).filter(w => w.length > 0).length;
 
-  if (!graph.hasNode(filePath)) {
-    graph.addNode(filePath, {
-      type: 'file',
-      name: path.basename(filePath),
-      file: filePath,
-      startLine: 0,
-      metadata: {
-        extension: '.md',
-        wordCount
-      }
-    });
-  }
+  graph.mergeNodeAttributes(filePath, {
+    metadata: {
+      extension: '.md',
+      wordCount
+    }
+  });
 
   // Extract references to codebase files
   const fileRefs = new Set<string>();

@@ -133,7 +133,7 @@ If cwd is not supported:
 
 | Type | Extensions |
 |------|-----------|
-| Code | `.ts .js .tsx .jsx` |
+| Code | `.ts .js .tsx .jsx .py .java .go .rs .cpp .cc .cxx .h .hpp` |
 | Docs | `.md .json` |
 | Assets | `.png .jpg .jpeg .svg .gif .webp .mp4 .webm .mp3 .wav` |
 
@@ -205,4 +205,5 @@ For small to medium-sized projects, we recommend committing the `.geraph/` folde
 - **Local Extraction**: All parsing (AST) and graph building happens entirely on your local machine.
 - **Offline MCP Server**: The MCP server reads the generated `.geraph/graph.json` offline, meaning **your code never leaves your system**. There are no API keys or cloud processing.
 - **Zero Cloud**: Your code never leaves your system. Everything happens inside your machine fully locally. No code, snippets, or metadata are ever sent to a server. There is no Geraph server.
+- **On Demand WASM Downloader**: To keep Geraph's npm package footprint extremely lightweight, we only bundle the core TypeScript and JavaScript parser grammars directly in the package. For other supported languages (Python, Go, Java, etc.), the parser's `.wasm` file is downloaded on-demand from the official [unpkg.com](https://unpkg.com/) CDN (derived from the [tree-sitter-wasms](https://www.npmjs.com/package/tree-sitter-wasms) npm package) using a secure GET request, and saved locally inside the `~/.geraph/parsers/` directory on your home machine. On all future runs, Geraph retrieves the grammar directly from this local cache. **Your code, snippets, and metadata never leave your machine during this or any other process.**
 - **No Telemetry**: No usage tracking, no analytics.

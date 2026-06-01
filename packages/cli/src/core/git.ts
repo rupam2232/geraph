@@ -135,7 +135,7 @@ export async function enrichWithGit(
   // If a file has NO functions/classes, map commits to the file node itself
   for (const nodeId of graph.nodes()) {
     const data = graph.getNodeAttributes(nodeId);
-    if (data.type === "file" && !data.metadata?.external) {
+    if ((data.type === "file" || data.type === "media") && !data.metadata?.external) {
       const basename = path.basename(nodeId);
       if (GIT_ENRICH_SKIP.has(basename)) continue;
       if (!nodesByFile.has(nodeId)) {
@@ -221,7 +221,8 @@ export async function enrichWithGit(
               let endLine = graph.getNodeAttributes(nodeId).metadata?.endLine as number | undefined;
               
               if (!startLine) {
-                if (graph.getNodeAttributes(nodeId).type === "file") {
+                const nodeType = graph.getNodeAttributes(nodeId).type;
+                if (nodeType === "file" || nodeType === "media") {
                   startLine = 1;
                   endLine = maxLine;
                 } else {

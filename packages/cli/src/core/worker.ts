@@ -250,6 +250,43 @@ parentPort?.on("message", async (msg: WorkerTask) => {
 
   const localGraph = new MultiDirectedGraph<NodeData, EdgeData>();
 
+  const originalAddEdge = localGraph.addEdge.bind(localGraph);
+  localGraph.addEdge = (source: string, target: string, attr?: EdgeData): string => {
+    if (!localGraph.hasNode(source)) {
+      let fileAttr = filePath;
+      let nameAttr = source;
+      if (source.includes("::")) {
+        const parts = source.split("::");
+        fileAttr = parts[0] || filePath;
+        nameAttr = parts.slice(1).join("::");
+      }
+      localGraph.addNode(source, {
+        type: "function",
+        name: nameAttr,
+        file: fileAttr,
+        startLine: 0,
+        metadata: { placeholder: true }
+      });
+    }
+    if (!localGraph.hasNode(target)) {
+      let fileAttr = filePath;
+      let nameAttr = target;
+      if (target.includes("::")) {
+        const parts = target.split("::");
+        fileAttr = parts[0] || filePath;
+        nameAttr = parts.slice(1).join("::");
+      }
+      localGraph.addNode(target, {
+        type: "function",
+        name: nameAttr,
+        file: fileAttr,
+        startLine: 0,
+        metadata: { placeholder: true }
+      });
+    }
+    return originalAddEdge(source, target, attr);
+  };
+
   try {
     // Seed local graph with the file node itself so parsers can add 'defines' edges
     localGraph.addNode(filePath, {

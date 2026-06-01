@@ -9,18 +9,13 @@ export function parseMedia(
 ) {
   const stats = fs.statSync(filePath);
   
-  if (!graph.hasNode(filePath)) {
-    graph.addNode(filePath, {
-      type: 'media',
-      name: path.basename(filePath),
-      file: filePath,
-      startLine: 0,
-      metadata: {
-        extension: path.extname(filePath),
-        sizeBytes: stats.size,
-        createdAt: stats.birthtime.toISOString(),
-        modifiedAt: stats.mtime.toISOString(),
-      }
-    });
-  }
+  graph.mergeNodeAttributes(filePath, {
+    type: 'media',
+    metadata: {
+      extension: path.extname(filePath),
+      sizeBytes: stats.size,
+      createdAt: stats.birthtime.toISOString(),
+      modifiedAt: stats.mtime.toISOString(),
+    }
+  });
 }

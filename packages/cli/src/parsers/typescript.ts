@@ -219,9 +219,11 @@ export function parseTypeScript(
       } else if (current.type === "variable_declarator") {
         const valNode = current.childForFieldName("value");
         if (valNode && (valNode.type === "arrow_function" || valNode.type === "function_expression")) {
-          const nameNode = current.childForFieldName("name");
-          if (nameNode) {
-            pathParts.unshift(nameNode.text.trim());
+          if (startNode && startNode.startIndex >= valNode.startIndex && startNode.endIndex <= valNode.endIndex) {
+            const nameNode = current.childForFieldName("name");
+            if (nameNode) {
+              pathParts.unshift(nameNode.text.trim());
+            }
           }
         }
       }

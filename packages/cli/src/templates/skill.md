@@ -140,7 +140,7 @@ Fetch all nodes clustered within a specific Louvain community ID.
 * **CLI Command:** `geraph community <id>`
   - *Syntax:* `geraph community <id> [--page <number>] [--limit <number>]`
 * **Output Format:**
-  `  {symbol_name} [{containing_file_path}]`
+  `  {symbol_name} (type: {node_type}) [id: {node_id}]`
 
 #### 4. Surprising Connections
 Fetch surprising cross-community couplings that link independent subsystems.
@@ -232,6 +232,7 @@ Triggers a full scan of the directory to rebuild the knowledge graph.
 
 ### AST Node Types
 * `file`: A source code file.
+* `media`: A media file (image, video, audio, etc.).
 * `function`: A function, method, or arrow function definition.
 * `class` / `struct`: A class or struct definition.
 * `interface` / `type` / `enum` / `trait`: Type, interface, enum, or trait declarations.
