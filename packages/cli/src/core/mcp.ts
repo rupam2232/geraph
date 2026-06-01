@@ -22,7 +22,7 @@ export async function runMcpServer(
   const server = new Server(
     {
       name: "geraph",
-      version: "0.4.0",
+      version: "1.0.0",
     },
     {
       capabilities: {

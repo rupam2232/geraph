@@ -124,7 +124,7 @@ export async function enrichWithGit(
     const data = graph.getNodeAttributes(nodeId);
     if (data.metadata?.external) continue;
     
-    if (["function", "class", "type", "interface", "enum"].includes(data.type)) {
+    if (!["file", "media", "intent"].includes(data.type)) {
       const filePath = nodeId.split("::")[0];
       if (!filePath) continue;
       if (!nodesByFile.has(filePath)) nodesByFile.set(filePath, []);
