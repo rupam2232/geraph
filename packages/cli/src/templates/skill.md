@@ -222,9 +222,9 @@ Get summary statistics of the graph (node/edge/community counts and confidence b
 #### 10. Rebuild Graph
 Triggers a full scan of the directory to rebuild the knowledge graph.
 * **MCP Tool:** `scan_graph`
-  - *Parameters:* None
+  - *Parameters:* `force` (Optional boolean, set true to ignore all caches and rebuild from scratch)
 * **CLI Command:** `geraph scan`
-  - *Syntax:* `geraph scan`
+  - *Syntax:* `geraph scan [--force]`
 
 ---
 

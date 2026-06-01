@@ -153,7 +153,7 @@ You can also create a `.geraphignore` file in your project root (using the same 
 
 ```bash
 # 1. AST Graph Management & Verification
-geraph scan                                             # Build/rebuild the knowledge graph for the current folder
+geraph scan [--force]                                   # Build/rebuild the knowledge graph (pass --force to bypass/rebuild all caches)
 geraph stats                                            # Print summary statistics (node/edge count & confidence breakdown)
 
 # 2. Structural Codebase Exploration & Searching
@@ -176,6 +176,7 @@ geraph uninstall [platform]                             # Remove geraph rules fr
 ```
 
 **Common Options & Flags:**
+* `-f, --force`: Force a full scan, ignoring all cached AST and Git blame data (doing a clean scan from scratch).
 * `-t, --type <type>`: Filter results by AST node type (e.g. `file`, `class`, `function`, `interface`, `type`, `enum`).
 * `-s, --source <file>`: Filter/disambiguate results by matching containing source file path suffix.
 * `-p, --page <number>`: The page index to fetch (Default: `1`).

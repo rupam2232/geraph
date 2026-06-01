@@ -254,7 +254,12 @@ export async function runMcpServer(
             "Triggers a full rebuild of the Geraph AST graph. Use this after making significant code modifications or pushing git commits to ensure your structural memory is up-to-date. (CLI Alternative: 'geraph scan')",
           inputSchema: {
             type: "object",
-            properties: {},
+            properties: {
+              force: {
+                type: "boolean",
+                description: "If true, fully ignore and rebuild all cache files (doing a clean scan from scratch)",
+              },
+            },
           },
         },
       ],
@@ -488,7 +493,9 @@ export async function runMcpServer(
           const { promisify } = await import("util");
           const execAsync = promisify(exec);
 
-          await execAsync("geraph scan", { cwd: targetDir });
+          const force = !!(args as Record<string, unknown>).force;
+          const cmd = force ? "geraph scan --force" : "geraph scan";
+          await execAsync(cmd, { cwd: targetDir });
 
           const { loadGraph } = await import("./query.js");
           const newGraph = loadGraph(targetDir);

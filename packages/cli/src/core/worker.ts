@@ -8,6 +8,7 @@ import os from "os";
 import https from "https";
 import { fileURLToPath } from "url";
 import Parser from "web-tree-sitter";
+import crypto from "crypto";
 type Language = Parser.Language;
 import { parseTypeScript } from "../parsers/typescript.js";
 import { parseJson } from "../parsers/json.js";
@@ -179,8 +180,74 @@ async function getDynamicLanguage(lang: string): Promise<Language | null> {
   }
 }
 
+const AST_CACHE_VERSION = "2"; // Increment this when parsers, rules, or supported languages change!
+
+function stripMarkdownFrontmatter(content: Buffer): Buffer {
+  const text = content.toString("utf8");
+  if (text.startsWith("---")) {
+    const end = text.indexOf("\n---", 3);
+    if (end !== -1) {
+      return Buffer.from(text.slice(end + 4));
+    }
+  }
+  return content;
+}
+
+function calculateFileHash(
+  filePath: string,
+  projectRoot: string,
+  aliasMap: import("./types.js").AliasMap,
+): string {
+  const content = fs.readFileSync(filePath);
+  const relPath = path.relative(projectRoot, filePath).toLowerCase();
+  const ext = filePath.split(".").pop()?.toLowerCase() || "";
+
+  const h = crypto.createHash("sha256");
+  h.update(Buffer.from(AST_CACHE_VERSION));
+  h.update(Buffer.from("\x00"));
+
+  if (ext === "md") {
+    const cleanContent = stripMarkdownFrontmatter(content);
+    h.update(cleanContent);
+    h.update(Buffer.from("\x00"));
+    h.update(Buffer.from(relPath));
+  } else if (ext === "ts" || ext === "js" || ext === "tsx" || ext === "jsx") {
+    h.update(content);
+    h.update(Buffer.from("\x00"));
+    h.update(Buffer.from(relPath));
+    h.update(Buffer.from("\x00"));
+    h.update(Buffer.from(JSON.stringify(aliasMap)));
+  } else {
+    h.update(content);
+    h.update(Buffer.from("\x00"));
+    h.update(Buffer.from(relPath));
+  }
+
+  return h.digest("hex");
+}
+
 parentPort?.on("message", async (msg: WorkerTask) => {
-  const { filePath, aliasMap } = msg;
+  const { filePath, projectRoot, aliasMap, action, cachePath } = msg;
+
+  if (action === "load-cache") {
+    try {
+      if (!cachePath) throw new Error("cachePath is required for load-cache action");
+      const cachedRaw = fs.readFileSync(cachePath, "utf-8");
+      const cached = JSON.parse(cachedRaw) as {
+        nodes?: WorkerNode[];
+        edges?: WorkerEdge[];
+      };
+      parentPort?.postMessage({
+        nodes: cached.nodes || [],
+        edges: cached.edges || []
+      } satisfies WorkerMessage);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      parentPort?.postMessage({ error: errorMessage });
+    }
+    return;
+  }
+
   const localGraph = new MultiDirectedGraph<NodeData, EdgeData>();
 
   try {
@@ -231,7 +298,35 @@ parentPort?.on("message", async (msg: WorkerTask) => {
       attr: localGraph.getEdgeAttributes(id),
     }));
 
-    const response: WorkerMessage = { nodes, edges };
+    let hash: string | undefined;
+    if (action === "parse" && projectRoot) {
+      try {
+        hash = calculateFileHash(filePath, projectRoot, aliasMap);
+        const astCacheDir = path.join(projectRoot, ".geraph", "cache", "ast");
+        if (!fs.existsSync(astCacheDir)) {
+          fs.mkdirSync(astCacheDir, { recursive: true });
+        }
+        const targetCachePath = path.join(astCacheDir, `${hash}.json`);
+        const tempPath = path.join(astCacheDir, `${hash}.${Date.now()}.${Math.random().toString(36).substring(2)}.tmp`);
+        
+        fs.writeFileSync(tempPath, JSON.stringify({ nodes, edges }));
+        try {
+          fs.renameSync(tempPath, targetCachePath);
+        } catch {
+          // Windows locks fallback
+          try {
+            fs.copyFileSync(tempPath, targetCachePath);
+            fs.unlinkSync(tempPath);
+          } catch {
+            // ignore fallback copy failure
+          }
+        }
+      } catch {
+        // ignore caching failure
+      }
+    }
+
+    const response: WorkerMessage = { nodes, edges, hash };
     parentPort?.postMessage(response);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);

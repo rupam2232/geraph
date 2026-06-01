@@ -22,6 +22,9 @@ const GIT_ENRICH_SKIP = new Set([
   "packages.lock.json",
   "CHANGELOG.md",
   "CHANGELOG.txt",
+  "go.sum",
+  "uv.lock",
+  "gradle.lockfile",
 ]);
 
 interface GitCacheBlameEntry {
@@ -41,9 +44,9 @@ interface GitCache {
   blame: Record<string, GitCacheBlameEntry>;
 }
 
-function loadCache(cacheFile: string): GitCache | null {
+async function loadCache(cacheFile: string): Promise<GitCache | null> {
   try {
-    const raw = fs.readFileSync(cacheFile, "utf-8");
+    const raw = await fs.promises.readFile(cacheFile, "utf-8");
     const parsed = JSON.parse(raw) as GitCache;
     if (parsed.version !== CACHE_VERSION) return null;
     return parsed;
@@ -52,9 +55,22 @@ function loadCache(cacheFile: string): GitCache | null {
   }
 }
 
-function saveCache(cacheFile: string, cache: GitCache): void {
+async function saveCache(cacheFile: string, cache: GitCache): Promise<void> {
   try {
-    fs.writeFileSync(cacheFile, JSON.stringify(cache, null, 2), "utf-8");
+    const serialized = JSON.stringify(cache);
+    const dir = path.dirname(cacheFile);
+    const tempFile = path.join(dir, `git-cache.${Date.now()}.${Math.random().toString(36).substring(2)}.tmp`);
+    await fs.promises.writeFile(tempFile, serialized, "utf-8");
+    try {
+      await fs.promises.rename(tempFile, cacheFile);
+    } catch {
+      try {
+        await fs.promises.copyFile(tempFile, cacheFile);
+        await fs.promises.unlink(tempFile);
+      } catch {
+        // ignore fallback failure
+      }
+    }
   } catch {
     // Non-fatal
   }
@@ -63,6 +79,7 @@ function saveCache(cacheFile: string, cache: GitCache): void {
 export async function enrichWithGit(
   graph: MultiDirectedGraph<NodeData, EdgeData>,
   targetDir: string,
+  force = false,
 ) {
   let git: SimpleGit;
 
@@ -86,11 +103,15 @@ export async function enrichWithGit(
   if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
   const cacheFile = path.join(cacheDir, "git-cache.json");
 
-  const cache: GitCache = loadCache(cacheFile) ?? {
+  const cache: GitCache = (force ? null : await loadCache(cacheFile)) ?? {
     version: CACHE_VERSION,
     commits: {},
     blame: {},
   };
+
+  if (force) {
+    cache.blame = {};
+  }
 
   const allDiscoveredHashes = new Set<string>();
   const globalNodeCommits = new Map<string, string[]>();
@@ -123,8 +144,22 @@ export async function enrichWithGit(
     }
   }
 
+  let trackedFiles: Set<string> | null = null;
+  try {
+    const trackedRaw = await git.raw(["ls-files"]);
+    trackedFiles = new Set(
+      trackedRaw
+        .split("\n")
+        .map((f) => f.trim())
+        .filter(Boolean)
+        .map((f) => path.normalize(path.resolve(targetDir, f)))
+    );
+  } catch {
+    trackedFiles = null;
+  }
+
   const filePaths = Array.from(nodesByFile.keys());
-  const BATCH_SIZE = 15;
+  const BATCH_SIZE = 8;
   for (let i = 0; i < filePaths.length; i += BATCH_SIZE) {
     const batch = filePaths.slice(i, i + BATCH_SIZE);
     await Promise.all(
@@ -132,24 +167,52 @@ export async function enrichWithGit(
         const nodeIds = nodesByFile.get(filePath)!;
         try {
           const normalizedPath = path.normalize(filePath);
+          if (trackedFiles && !trackedFiles.has(normalizedPath)) {
+            return;
+          }
+
           const stat = fs.statSync(filePath);
           const currentMtime = stat.mtimeMs;
           const cachedBlame = cache.blame[normalizedPath];
 
           let nodeCommits: Record<string, string[]> = {};
-          if (cachedBlame && cachedBlame.mtime === currentMtime) {
+          if (!force && cachedBlame && cachedBlame.mtime === currentMtime) {
             nodeCommits = cachedBlame.nodeToCommits;
           } else {
             const blameOut = await git.raw(["blame", "--line-porcelain", filePath]);
             const allLineToCommit = new Map<number, string>();
             let maxLine = 0;
             
-            for (const line of blameOut.split("\n")) {
-              if (line.match(/^[0-9a-f]{40} /)) {
-                const parts = line.split(" ");
-                const lineNum = parseInt(parts[2]!, 10);
-                allLineToCommit.set(lineNum, parts[0]!);
-                if (lineNum > maxLine) maxLine = lineNum;
+            let pos = 0;
+            while (pos < blameOut.length) {
+              const nextNewline = blameOut.indexOf("\n", pos);
+              const end = nextNewline === -1 ? blameOut.length : nextNewline;
+              const line = blameOut.substring(pos, end);
+              pos = end + 1;
+
+              if (line.length >= 45 && line.charCodeAt(40) === 32) {
+                const hash = line.substring(0, 40);
+                let isHex = true;
+                for (let j = 0; j < 40; j++) {
+                  const c = hash.charCodeAt(j);
+                  if (!((c >= 48 && c <= 57) || (c >= 97 && c <= 102) || (c >= 65 && c <= 70))) {
+                    isHex = false;
+                    break;
+                  }
+                }
+                if (isHex) {
+                  const secondSpace = line.indexOf(" ", 41);
+                  if (secondSpace !== -1) {
+                    const thirdSpace = line.indexOf(" ", secondSpace + 1);
+                    const endOfLineNum = thirdSpace === -1 ? line.length : thirdSpace;
+                    const lineNumStr = line.substring(secondSpace + 1, endOfLineNum);
+                    const lineNum = parseInt(lineNumStr, 10);
+                    if (!isNaN(lineNum)) {
+                      allLineToCommit.set(lineNum, hash);
+                      if (lineNum > maxLine) maxLine = lineNum;
+                    }
+                  }
+                }
               }
             }
 
@@ -263,5 +326,5 @@ export async function enrichWithGit(
     }
   }
 
-  saveCache(cacheFile, cache);
+  await saveCache(cacheFile, cache);
 }
