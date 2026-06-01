@@ -1,4 +1,5 @@
 import { MultiDirectedGraph } from "graphology";
+import path from "path";
 
 export type NodeType =
   | "file"
@@ -8,7 +9,10 @@ export type NodeType =
   | "intent"
   | "type"
   | "interface"
-  | "enum";
+  | "enum"
+  | "struct"
+  | "trait"
+  | "macro";
 export type EdgeType =
   | "imports"
   | "calls"
@@ -57,15 +61,25 @@ export function createKnowledgeGraph(): MultiDirectedGraph<NodeData, EdgeData> {
 export function resolveCallGraph(
   graph: MultiDirectedGraph<NodeData, EdgeData>,
 ): void {
-  // Build a lookup map: name -> real node ID (prefer first match)
-  const realDefs = new Map<string, string>();
+  // Build a lookup map: name -> list of real node IDs
+  const realDefs = new Map<string, string[]>();
   for (const nodeId of graph.nodes()) {
     const data = graph.getNodeAttributes(nodeId);
-    if (!nodeId.startsWith("unresolved::") && (data.type === "function" || data.type === "class" || data.type === "type" || data.type === "interface" || data.type === "enum")) {
+    if (!nodeId.startsWith("unresolved::") && (
+      data.type === "function" || 
+      data.type === "class" || 
+      data.type === "type" || 
+      data.type === "interface" || 
+      data.type === "enum" ||
+      data.type === "struct" ||
+      data.type === "trait" ||
+      data.type === "macro"
+    )) {
       const name = data.name;
       if (!realDefs.has(name)) {
-        realDefs.set(name, nodeId);
+        realDefs.set(name, []);
       }
+      realDefs.get(name)!.push(nodeId);
     }
   }
 
@@ -73,9 +87,38 @@ export function resolveCallGraph(
   const ghosts = graph.nodes().filter((n) => n.startsWith("unresolved::"));
   for (const ghostId of ghosts) {
     const ghostData = graph.getNodeAttributes(ghostId);
-    const realId = realDefs.get(ghostData.name);
+    let name = ghostData.name;
+    if (name.includes(".")) {
+      name = name.split(".").pop() || name;
+    }
+    if (name.includes("::")) {
+      name = name.split("::").pop() || name;
+    }
+    const candidates = realDefs.get(name);
 
-    if (realId) {
+    if (candidates && candidates.length > 0) {
+      let realId = candidates[0]!;
+      let bestScore = -1;
+
+      for (const candidateId of candidates) {
+        const candidateData = graph.getNodeAttributes(candidateId);
+        let score = 0;
+
+        // 1. Same file directory priority (crucial for same-package Go/Java/C++ files)
+        if (path.dirname(candidateData.file) === path.dirname(ghostData.file)) {
+          score += 10;
+        }
+        // 2. Same language/file extension priority
+        if (path.extname(candidateData.file) === path.extname(ghostData.file)) {
+          score += 5;
+        }
+
+        if (score > bestScore) {
+          bestScore = score;
+          realId = candidateId;
+        }
+      }
+
       // Rewire all incoming edges (callers → ghost) to (callers → real)
       for (const edgeId of graph.inEdges(ghostId)) {
         const src = graph.source(edgeId);

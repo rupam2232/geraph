@@ -24,18 +24,12 @@ export function parseJson(
     // ignore parse errors
   }
 
-  if (!graph.hasNode(filePath)) {
-    graph.addNode(filePath, {
-      type: 'file',
-      name: fileName,
-      file: filePath,
-      startLine: 0,
-      metadata: {
-        extension: '.json',
-        keyCount
-      }
-    });
-  }
+  graph.mergeNodeAttributes(filePath, {
+    metadata: {
+      extension: '.json',
+      keyCount
+    }
+  });
 
   // Draw edges to external dependencies
   for (const dep of Object.keys(deps)) {

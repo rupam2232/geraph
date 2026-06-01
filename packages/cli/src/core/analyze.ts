@@ -101,8 +101,40 @@ export function detectCommunities(
     return seed / 233280;
   };
 
+  // Create a sorted, deterministic copy of the graph to guarantee stable community detection
+  const deterministicGraph = new MultiDirectedGraph<NodeData, EdgeData>();
+  
+  // Sort node IDs alphabetically
+  const sortedNodeIds = [...graph.nodes()].sort();
+  sortedNodeIds.forEach((nodeId) => {
+    deterministicGraph.addNode(nodeId, graph.getNodeAttributes(nodeId));
+  });
+
+  // Sort edges deterministically by source, target, and edgeId
+  const sortedEdges = graph.edges().map(edgeId => {
+    return {
+      id: edgeId,
+      source: graph.source(edgeId),
+      target: graph.target(edgeId),
+      attributes: graph.getEdgeAttributes(edgeId)
+    };
+  });
+  sortedEdges.sort((a, b) => {
+    const compareSource = a.source.localeCompare(b.source);
+    if (compareSource !== 0) return compareSource;
+    const compareTarget = a.target.localeCompare(b.target);
+    if (compareTarget !== 0) return compareTarget;
+    return a.id.localeCompare(b.id);
+  });
+
+  sortedEdges.forEach((edge) => {
+    if (!deterministicGraph.hasEdge(edge.source, edge.target)) {
+      deterministicGraph.addEdge(edge.source, edge.target, edge.attributes);
+    }
+  });
+
   try {
-    communityMap = louvainAlgorithm(graph, { rng });
+    communityMap = louvainAlgorithm(deterministicGraph, { rng });
   } catch {
     graph.forEachNode((nodeId) => {
       communityMap[nodeId] = 0;

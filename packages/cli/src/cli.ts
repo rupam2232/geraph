@@ -7,7 +7,6 @@ import { extractAst } from "./core/ast.js";
 import { createKnowledgeGraph, resolveCallGraph } from "./core/graph.js";
 import { enrichWithGit } from "./core/git.js";
 import { analyzeGraph } from "./core/analyze.js";
-import { buildAliasMap } from "./core/alias.js";
 import {
   exportGraphJson,
   exportReportMarkdown,
@@ -21,13 +20,18 @@ export const program = new Command();
 program
   .name("geraph")
   .description(chalk.blue("Geraph: Structural memory for AI agents"))
-  .version("0.4.0", "-v, --version", "output the current version");
+  .version("1.0.0", "-v, --version", "output the current version");
 
 program
   .command("scan")
   .description("Scan the current directory and build the Knowledge Graph")
-  .action(async () => {
+  .option(
+    "-f, --force",
+    "Force a full scan, ignoring all cached AST and Git blame data",
+  )
+  .action(async (options) => {
     const targetDir = process.cwd();
+    const force = !!options.force;
 
     const spinner = ora({
       text: chalk.gray(`Scanning codebase in ${targetDir}...`),
@@ -38,10 +42,10 @@ program
     const startTime = performance.now();
 
     try {
-      // Phase 1: Invoke the File Walker
+      // Invoke the File Walker
       const files = await scanDirectory(targetDir);
 
-      // Phase 2: Initialize Knowledge Graph
+      // Initialize Knowledge Graph
       spinner.text = chalk.gray("Initializing Knowledge Graph...");
       const graph = createKnowledgeGraph();
 
@@ -60,29 +64,25 @@ program
         }
       }
 
-      // Phase 3: Path Aliasing
-      spinner.text = chalk.gray("Mapping path aliases...");
-      const aliasMap = buildAliasMap(files);
-
-      // Phase 4: AST Parsing
-      await extractAst(files, graph, targetDir, aliasMap, spinner);
+      // AST Parsing
+      await extractAst(files, graph, targetDir, spinner, force);
 
       spinner.text = chalk.gray("Resolving call graph...");
       // Merges unresolved_fn ghost nodes into real defined functions,
       // eliminating duplicates caused by cross-file call references.
       resolveCallGraph(graph);
 
-      // Phase 5: Temporal Fact Management (Git History)
+      // Temporal Fact Management (Git History)
       spinner.text = chalk.gray(
         "Extracting Temporal Facts from Git history...",
       );
-      await enrichWithGit(graph, targetDir);
+      await enrichWithGit(graph, targetDir, force);
 
-      // Phase 6: Graph Analysis
+      // Graph Analysis
       spinner.text = chalk.gray("Analyzing graph structure...");
       const analysis = analyzeGraph(graph);
 
-      // Phase 7: Caveman Mode & Serialization
+      // Caveman Mode & Serialization
       spinner.text = chalk.gray("Compressing graph into Caveman Mode...");
       const outDir = path.join(targetDir, ".geraph");
       exportGraphJson(graph, outDir, analysis);

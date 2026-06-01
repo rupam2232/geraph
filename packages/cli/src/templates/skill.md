@@ -140,7 +140,7 @@ Fetch all nodes clustered within a specific Louvain community ID.
 * **CLI Command:** `geraph community <id>`
   - *Syntax:* `geraph community <id> [--page <number>] [--limit <number>]`
 * **Output Format:**
-  `  {symbol_name} [{containing_file_path}]`
+  `  {symbol_name} (type: {node_type}) [id: {node_id}]`
 
 #### 4. Surprising Connections
 Fetch surprising cross-community couplings that link independent subsystems.
@@ -222,9 +222,9 @@ Get summary statistics of the graph (node/edge/community counts and confidence b
 #### 10. Rebuild Graph
 Triggers a full scan of the directory to rebuild the knowledge graph.
 * **MCP Tool:** `scan_graph`
-  - *Parameters:* None
+  - *Parameters:* `force` (Optional boolean, set true to ignore all caches and rebuild from scratch)
 * **CLI Command:** `geraph scan`
-  - *Syntax:* `geraph scan`
+  - *Syntax:* `geraph scan [--force]`
 
 ---
 
@@ -232,9 +232,11 @@ Triggers a full scan of the directory to rebuild the knowledge graph.
 
 ### AST Node Types
 * `file`: A source code file.
+* `media`: A media file (image, video, audio, etc.).
 * `function`: A function, method, or arrow function definition.
-* `class`: A class definition.
-* `interface` / `type` / `enum`: TypeScript definition declarations.
+* `class` / `struct`: A class or struct definition.
+* `interface` / `type` / `enum` / `trait`: Type, interface, enum, or trait declarations.
+* `macro`: A macro definition.
 * `intent`: A Git commit explaining why a node exists (query its `metadata.message` for history).
 
 ### AST Edge Types (`relation`)

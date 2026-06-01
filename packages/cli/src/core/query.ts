@@ -574,8 +574,7 @@ export async function getCommunityNodes(
   paginatedNodes.forEach((nodeId) => {
     const attr = graph.getNodeAttributes(nodeId);
     const label = attr.name || nodeId;
-    const sourceFile = attr.file || "";
-    lines.push(`  ${label} [${sourceFile}]`);
+    lines.push(`  ${label} (type: ${attr.type}) [id: ${nodeId}]`);
   });
 
   if (totalPages > 1) {

@@ -56,6 +56,7 @@ function mergeConfigs(
   };
 }
 
+// Build custom import path aliases (specifically for JS/TS projects using tsconfig/jsconfig)
 export function buildAliasMap(files: string[]): AliasMap {
   const map: AliasMap = {};
   const configFiles = files.filter(

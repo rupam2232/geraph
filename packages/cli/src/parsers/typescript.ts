@@ -1,6 +1,6 @@
-import Parser, { Query } from "tree-sitter";
-import tsLanguage from "tree-sitter-typescript";
-import jsLanguage from "tree-sitter-javascript";
+import Parser from "web-tree-sitter";
+type Language = Parser.Language;
+type Node = Parser.SyntaxNode;
 import fs from "fs";
 import path from "path";
 import { builtinModules } from "module";
@@ -17,8 +17,8 @@ const BUILT_INS = new Set([
   "split", "replace", "replaceAll", "match", "matchAll", "search", "substring", "substr", "trim", "trimStart", "trimEnd", "charAt", "charCodeAt", "codePointAt", "concat", "repeat", "normalize", "startsWith", "endsWith", "padStart", "padEnd", "toLowerCase", "toUpperCase", "toLocaleLowerCase", "toLocaleUpperCase", "exec", "test",
   "join", "getDate", "getDay", "getFullYear", "getHours", "getMilliseconds", "getMinutes", "getMonth", "getSeconds", "getTime", "getTimezoneOffset", "getUTCDate", "getUTCDay", "getUTCFullYear", "getUTCHours", "getUTCMilliseconds", "getUTCMinutes", "getUTCMonth", "getUTCSeconds", "setDate", "setFullYear", "setHours", "setMilliseconds", "setMinutes", "setMonth", "setSeconds", "setTime", "setUTCDate", "setUTCFullYear", "setUTCHours", "setUTCMilliseconds", "setUTCMinutes", "setUTCMonth", "setUTCSeconds", "toISOString", "toJSON", "toDateString", "toTimeString", "toUTCString", "toLocaleDateString", "toLocaleTimeString",
   "then", "catch", "finally", "from", "of", "fromEntries", "fromCharCode", "fromCodePoint", "parseInt", "parseFloat", "isNaN", "isFinite", "isInteger", "isSafeInteger", "toFixed", "toPrecision", "toExponential", "call", "apply", "bind", "next", "cwd", "exit", "chdir", "memoryUsage", "hrtime", "nextTick", "uptime", "cpuUsage", "resourceUsage", "send", "abort", "on", "off", "emit", "once", "removeListener", "removeAllListeners", "addListener", "listeners", "listenerCount", "eventNames", "prependListener", "construct", "ownKeys", "for", "keyFor", "format", "formatToParts", "resolvedOptions", "supportedLocalesOf",
-  "Partial", "Required", "Readonly", "Record", "Pick", "Omit", "Exclude", "Extract", "NonNullable", "Parameters", "ConstructorParameters", "ReturnType", "InstanceType", "ThisParameterType", "OmitThisParameter", "ThisType", "Awaited", "String", "Number", "Boolean", "Symbol", "Object", "Array", "Promise", "Date", "Error", "RegExp",
-  "JSON", "Math", "console", "process", "Buffer",
+  "Partial", "Required", "Readonly", "Record", "Pick", "Omit", "Exclude", "Extract", "NonNullable", "Parameters", "ConstructorParameters", "ReturnType", "InstanceType", "ThisParameterType", "OmitThisParameter", "ThisType", "Awaited", "String", "Number", "Boolean", "Symbol", "Object", "Array", "Promise", "Date", "Error", "RegExp", "URL", "URLSearchParams", "Headers", "Request", "Response",
+  "JSON", "Math", "console", "process", "Buffer", "resolve", "reject", "fetch", "setTimeout", "setInterval", "clearTimeout", "clearInterval",
   "postMessage", "terminate", "info", "warn", "error", "debug", "succeed", "fail", "start", "stop", "command", "option", "action", "description", "parse", "version"
 ]);
 
@@ -94,20 +94,44 @@ function resolveImportToNode(importPath: string, sourceFilePath: string, aliases
   return null;
 }
 
+function readSourceFile(filePath: string): string {
+  const buffer = fs.readFileSync(filePath);
+  if (buffer.length >= 2 && buffer[0] === 0xFF && buffer[1] === 0xFE) {
+    return buffer.toString("utf16le").replace(/^\uFEFF/, "");
+  }
+  if (buffer.length >= 2 && buffer[0] === 0xFE && buffer[1] === 0xFF) {
+    const swapped = Buffer.alloc(buffer.length);
+    for (let i = 0; i < buffer.length - 1; i += 2) {
+      swapped[i] = buffer[i + 1]!;
+      swapped[i + 1] = buffer[i]!;
+    }
+    return swapped.toString("utf16le").replace(/^\uFEFF/, "");
+  }
+  let content = buffer.toString("utf8");
+  if (content.startsWith("\uFEFF")) {
+    content = content.slice(1);
+  }
+  return content.replace(/\0/g, "");
+}
+
 export function parseTypeScript(
   filePath: string,
   graph: MultiDirectedGraph<NodeData, EdgeData>,
+  languageMap: {
+    typescript: Language;
+    tsx: Language;
+    javascript: Language;
+  },
   aliases: import("../core/types.js").PathAlias[] = []
 ) {
   const isTs = filePath.endsWith(".ts") || filePath.endsWith(".tsx");
   const isTsx = filePath.endsWith(".tsx");
 
-  let language;
+  let language: Language;
   if (isTs) {
-    const tsObj = tsLanguage;
-    language = isTsx ? (tsObj.tsx || tsObj) : (tsObj.typescript || tsObj);
+    language = isTsx ? languageMap.tsx : languageMap.typescript;
   } else {
-    language = jsLanguage;
+    language = languageMap.javascript;
   }
 
   const parser = new Parser();
@@ -119,18 +143,17 @@ export function parseTypeScript(
 
   let sourceCode: string;
   try {
-    sourceCode = fs.readFileSync(filePath, "utf8").replace(/\0/g, "");
+    sourceCode = readSourceFile(filePath);
   } catch {
     return;
   }
 
-  const tree = parser.parse((index: number) => {
-    if (index >= sourceCode.length) return null;
-    return sourceCode.substring(index, index + 10240);
-  });
+  const tree = parser.parse(sourceCode);
+  if (!tree) return;
 
   const importMap = new Map<string, string>();
   const localDefinitions = new Set<string>(); 
+  const localMethodMap = new Map<string, string[]>();
 
   const baseQueryString = `
     (import_statement (import_clause (identifier) @default_import) source: (string) @import_source)
@@ -173,52 +196,40 @@ export function parseTypeScript(
     (new_expression constructor: (_) @constructor_name)
   `;
 
-  const query = new Query(language, baseQueryString);
+  const query = language.query(baseQueryString);
   const matches = query.matches(tree.rootNode);
 
-  const getEnclosingScope = (node: Parser.SyntaxNode): { name: string; type: NodeType } | null => {
-    let current = node.parent;
+  const getEnclosingScopePath = (startNode: Node | null | undefined): string => {
+    const pathParts: string[] = [];
+    let current = startNode;
     while (current) {
-      if (current.type === "function_declaration" || current.type === "method_definition") {
+      if (
+        current.type === "class_declaration" ||
+        current.type === "abstract_class_declaration" ||
+        current.type === "interface_declaration" ||
+        current.type === "type_alias_declaration" ||
+        current.type === "enum_declaration" ||
+        current.type === "function_declaration" ||
+        current.type === "method_definition"
+      ) {
         const nameNode = current.childForFieldName("name");
-        if (nameNode) return { name: nameNode.text, type: "function" };
-      } else if (current.type === "variable_declarator") {
-        const valueNode = current.childForFieldName("value");
-        if (valueNode && (valueNode.type === "arrow_function" || valueNode.type === "function_expression")) {
-          const nameNode = current.childForFieldName("name");
-          if (nameNode) return { name: nameNode.text, type: "function" };
+        if (nameNode) {
+          pathParts.unshift(nameNode.text.trim());
         }
-      } else if (current.type === "class_declaration" || current.type === "abstract_class_declaration") {
-          const nameNode = current.childForFieldName("name");
-          if (nameNode) return { name: nameNode.text, type: "class" };
-      } else if (current.type === "interface_declaration") {
-          const nameNode = current.childForFieldName("name");
-          if (nameNode) return { name: nameNode.text, type: "interface" };
-      } else if (current.type === "type_alias_declaration") {
-          const nameNode = current.childForFieldName("name");
-          if (nameNode) return { name: nameNode.text, type: "type" };
+      } else if (current.type === "variable_declarator") {
+        const valNode = current.childForFieldName("value");
+        if (valNode && (valNode.type === "arrow_function" || valNode.type === "function_expression")) {
+          if (startNode && startNode.startIndex >= valNode.startIndex && startNode.endIndex <= valNode.endIndex) {
+            const nameNode = current.childForFieldName("name");
+            if (nameNode) {
+              pathParts.unshift(nameNode.text.trim());
+            }
+          }
+        }
       }
       current = current.parent;
     }
-    return null;
-  };
-
-  const ensureScopeNode = (node: Parser.SyntaxNode): string => {
-    const scope = getEnclosingScope(node);
-    if (!scope) return filePath; // The file node itself acts as the root execution scope
-    
-    const id = `${filePath}::${scope.name}`;
-    if (!graph.hasNode(id)) {
-      graph.addNode(id, {
-        type: scope.type,
-        name: scope.name,
-        file: filePath,
-        startLine: node.startPosition.row + 1,
-        metadata: { endLine: node.endPosition.row + 1 }
-      });
-      graph.addEdge(filePath, id, { type: "defines", confidence: "EXTRACTED" });
-    }
-    return id;
+    return pathParts.join(".");
   };
 
   // 1. First pass: Collect imports AND local definitions
@@ -227,9 +238,8 @@ export function parseTypeScript(
     for (const capture of match.captures) {
       if (capture.name === "import_source") {
         currentSource = capture.node.text.replace(/['"]/g, "");
-        // If it is a dynamic import, let's also find the variable/pattern it's assigned to
         if (capture.node.parent?.type === "import_expression" || capture.node.parent?.type === "call_expression") {
-          let parent: Parser.SyntaxNode | null = capture.node.parent;
+          let parent: Node | null = capture.node.parent;
           while (parent && parent.type !== "variable_declarator") {
             parent = parent.parent;
           }
@@ -240,7 +250,7 @@ export function parseTypeScript(
                 importMap.set(nameNode.text, currentSource);
               } else if (nameNode.type === "object_pattern") {
                 const identifiers: string[] = [];
-                const extractIds = (n: Parser.SyntaxNode) => {
+                const extractIds = (n: Node) => {
                   if (n.type === "identifier" || n.type === "shorthand_property_identifier") {
                     identifiers.push(n.text);
                   }
@@ -259,8 +269,7 @@ export function parseTypeScript(
         }
       } else if (capture.name === "require_source") {
         currentSource = capture.node.text.replace(/['"]/g, "");
-        // If it's a require, let's find the variable it's assigned to
-        let parent: Parser.SyntaxNode | null = capture.node.parent; // arguments
+        let parent: Node | null = capture.node.parent;
         while (parent && parent.type !== "variable_declarator") {
           parent = parent.parent;
         }
@@ -280,20 +289,35 @@ export function parseTypeScript(
       }
     }
     for (const capture of match.captures) {
-        if (["func_name", "method_name", "var_func_name", "class_decl", "interface_name", "type_name", "enum_name"].includes(capture.name)) {
-            localDefinitions.add(capture.node.text);
+      if (["func_name", "method_name", "var_func_name", "class_decl", "interface_name", "type_name", "enum_name"].includes(capture.name)) {
+        let finalSymName = capture.node.text.trim();
+        if (capture.name === "class_decl" && (capture.node.type === "class_declaration" || capture.node.type === "abstract_class_declaration")) {
+          const nameNode = capture.node.childForFieldName("name");
+          if (nameNode) finalSymName = nameNode.text.trim();
         }
+        localDefinitions.add(finalSymName);
+
+        const scopePrefix = getEnclosingScopePath(capture.node.parent?.parent);
+        const symId = scopePrefix ? `${filePath}::${scopePrefix}.${finalSymName}` : `${filePath}::${finalSymName}`;
+
+        if (["func_name", "method_name", "var_func_name"].includes(capture.name)) {
+          if (!localMethodMap.has(finalSymName)) {
+            localMethodMap.set(finalSymName, []);
+          }
+          localMethodMap.get(finalSymName)!.push(symId);
+        }
+      }
     }
   }
 
-  const getRootIdentifier = (node: Parser.SyntaxNode | null): string => {
+  const getRootIdentifier = (node: Node | null): string => {
     if (!node) return "";
     if (node.type === "identifier") return node.text.trim();
     if (node.type === "member_expression") {
-        return getRootIdentifier(node.childForFieldName("object"));
+      return getRootIdentifier(node.childForFieldName("object"));
     }
     if (node.type === "call_expression") {
-        return getRootIdentifier(node.childForFieldName("function"));
+      return getRootIdentifier(node.childForFieldName("function"));
     }
     return "";
   };
@@ -331,107 +355,108 @@ export function parseTypeScript(
       } else if (["class_decl", "interface_name", "type_name", "enum_name", "func_name", "method_name", "var_func_name"].includes(name)) {
         let decl = node;
         if (decl.parent && ["function_declaration", "method_definition", "interface_declaration", "type_alias_declaration", "enum_declaration", "class_declaration", "abstract_class_declaration", "variable_declarator"].includes(decl.parent.type)) {
-            decl = decl.parent;
+          decl = decl.parent;
         }
         if (decl.parent && ["export_statement", "lexical_declaration", "variable_declaration"].includes(decl.parent.type)) {
-            decl = decl.parent;
+          decl = decl.parent;
         }
         if (decl.parent && ["export_statement"].includes(decl.parent.type)) {
-            decl = decl.parent;
+          decl = decl.parent;
         }
 
         const comments: string[] = [];
         let prev = decl.previousNamedSibling;
         while (prev && prev.type === "comment") {
-            comments.push(prev.text);
-            prev = prev.previousNamedSibling;
+          comments.push(prev.text);
+          prev = prev.previousNamedSibling;
         }
         
         let jsdoc: { doc: string; deprecated: boolean; links: string[] } | null = null;
         if (comments.length > 0) {
-            comments.reverse();
-            const docText = comments.join("\n");
-            const links: string[] = [];
-            const seeMatches = [...docText.matchAll(/@see\s+([^\s}]+)/g)];
-            for (const m of seeMatches) if (m[1]) links.push(m[1].replace(/['"]/g, ""));
-            const linkMatches = [...docText.matchAll(/{@link\s+([^\s}]+)/g)];
-            for (const m of linkMatches) if (m[1]) links.push(m[1].replace(/['"]/g, ""));
-            
-            jsdoc = { doc: docText, deprecated: docText.includes("@deprecated"), links };
+          comments.reverse();
+          const docText = comments.join("\n");
+          const links: string[] = [];
+          const seeMatches = [...docText.matchAll(/@see\s+([^\s}]+)/g)];
+          for (const m of seeMatches) if (m[1]) links.push(m[1].replace(/['"]/g, ""));
+          const linkMatches = [...docText.matchAll(/{@link\s+([^\s}]+)/g)];
+          for (const m of linkMatches) if (m[1]) links.push(m[1].replace(/['"]/g, ""));
+          
+          jsdoc = { doc: docText, deprecated: docText.includes("@deprecated"), links };
         }
 
         const symName = node.text.trim();
-        // Fallback name parsing for class_decl (since it matches the full class_declaration)
         let finalSymName = symName;
-        if (name === "class_decl" && node.type === "class_declaration") {
-            const nameNode = node.childForFieldName("name");
-            if (nameNode) finalSymName = nameNode.text.trim();
+        if (name === "class_decl" && (node.type === "class_declaration" || node.type === "abstract_class_declaration")) {
+          const nameNode = node.childForFieldName("name");
+          if (nameNode) finalSymName = nameNode.text.trim();
         }
         
-        const symId = `${filePath}::${finalSymName}`;
+        const scopePrefix = getEnclosingScopePath(node.parent?.parent);
+        const symId = scopePrefix ? `${filePath}::${scopePrefix}.${finalSymName}` : `${filePath}::${finalSymName}`;
+        const parentId = scopePrefix ? `${filePath}::${scopePrefix}` : filePath;
+
         const typeMap: Record<string, NodeType> = {
-            class_decl: "class", interface_name: "interface", type_name: "type", enum_name: "enum",
-            func_name: "function", method_name: "function", var_func_name: "function"
+          class_decl: "class", interface_name: "interface", type_name: "type", enum_name: "enum",
+          func_name: "function", method_name: "function", var_func_name: "function"
         };
 
         const nodeAttrs = {
-            type: typeMap[name] || "function",
-            name: finalSymName,
-            file: filePath,
-            startLine: node.startPosition.row + 1,
-            metadata: { 
-                endLine: (node.parent?.endPosition?.row ?? node.startPosition.row) + 1,
-                doc: jsdoc?.doc,
-                deprecated: jsdoc?.deprecated || false,
-                external: false,
-                unresolved: false
-            }
+          type: typeMap[name] || "function",
+          name: finalSymName,
+          file: filePath,
+          startLine: decl.startPosition.row + 1,
+          metadata: { 
+            endLine: decl.endPosition.row + 1,
+            doc: jsdoc?.doc,
+            deprecated: jsdoc?.deprecated || false,
+            external: false,
+            unresolved: false
+          }
         };
 
         if (!graph.hasNode(symId)) {
           graph.addNode(symId, nodeAttrs);
-          graph.addEdge(filePath, symId, { type: "defines", confidence: "EXTRACTED" });
+          graph.addEdge(parentId, symId, { type: "defines", confidence: "EXTRACTED" });
         } else {
           graph.mergeNodeAttributes(symId, nodeAttrs);
-          if (!graph.hasEdge(filePath, symId)) {
-              graph.addEdge(filePath, symId, { type: "defines", confidence: "EXTRACTED" });
+          if (!graph.hasEdge(parentId, symId)) {
+            graph.addEdge(parentId, symId, { type: "defines", confidence: "EXTRACTED" });
           }
         }
 
         if (jsdoc && jsdoc.links.length > 0) {
-            for (const link of jsdoc.links) {
-                let targetPath = link;
-                if (link.startsWith(".")) {
-                    targetPath = resolveImportToNode(link, filePath, aliases) || link;
-                }
-                
-                if (!graph.hasNode(targetPath)) {
-                    graph.addNode(targetPath, { type: "file", name: path.basename(targetPath), file: targetPath, startLine: 0, metadata: { external: true } });
-                }
-                if (!graph.hasEdge(symId, targetPath)) {
-                    graph.addEdge(symId, targetPath, { type: "explains", confidence: "EXTRACTED" });
-                }
+          for (const link of jsdoc.links) {
+            let targetPath = link;
+            if (link.startsWith(".")) {
+              targetPath = resolveImportToNode(link, filePath, aliases) || link;
             }
+            
+            if (!graph.hasNode(targetPath)) {
+              graph.addNode(targetPath, { type: "file", name: path.basename(targetPath), file: targetPath, startLine: 0, metadata: { external: true } });
+            }
+            if (!graph.hasEdge(symId, targetPath)) {
+              graph.addEdge(symId, targetPath, { type: "explains", confidence: "EXTRACTED" });
+            }
+          }
         }
-
 
       } else if (name === "type_reference") {
         const referencedTypeName = node.text.trim();
         
         let moduleName = "";
         if (node.parent?.type === "nested_type_identifier") {
-            const moduleNode = node.parent.childForFieldName("module");
-            if (moduleNode) {
-                moduleName = moduleNode.text.trim();
-            }
+          const moduleNode = node.parent.childForFieldName("module");
+          if (moduleNode) {
+            moduleName = moduleNode.text.trim();
+          }
         }
         
         if (BUILT_INS.has(referencedTypeName) && !localDefinitions.has(referencedTypeName) && !importMap.has(referencedTypeName) && !moduleName) continue;
         
-        // Skip identifiers that ARE the name of a definition
         if (["interface_declaration", "type_alias_declaration", "import_specifier", "class_declaration", "function_declaration", "variable_declarator"].includes(node.parent?.type || "")) continue;
 
-        const callerId = ensureScopeNode(node);
+        const callerScope = getEnclosingScopePath(node.parent);
+        const callerId = callerScope ? `${filePath}::${callerScope}` : filePath;
         const importSource = importMap.get(moduleName || referencedTypeName);
         
         const isCoreModule = importSource && (NODE_CORE_MODULES.has(importSource) || NODE_CORE_MODULES.has(importSource.replace(/^node:/, "")));
@@ -439,12 +464,12 @@ export function parseTypeScript(
 
         let targetId: string;
         if (localDefinitions.has(referencedTypeName)) {
-            targetId = `${filePath}::${referencedTypeName}`;
+          targetId = `${filePath}::${referencedTypeName}`;
         } else if (importSource) {
-            const resolvedSource = resolveImportToNode(importSource, filePath, aliases) || importSource;
-            targetId = `${resolvedSource}::${referencedTypeName}`;
+          const resolvedSource = resolveImportToNode(importSource, filePath, aliases) || importSource;
+          targetId = `${resolvedSource}::${referencedTypeName}`;
         } else {
-            targetId = `unresolved::${referencedTypeName}`;
+          targetId = `unresolved::${referencedTypeName}`;
         }
 
         const isUnresolved = !importSource && !localDefinitions.has(referencedTypeName);
@@ -456,36 +481,36 @@ export function parseTypeScript(
             file: (importSource && resolveImportToNode(importSource, filePath, aliases)) || importSource || filePath,
             startLine: 0,
             metadata: { 
-                external: !!importSource, 
-                unresolved: isUnresolved, 
-                endLine: 0,
-                callerFile: isUnresolved ? filePath : undefined,
-                callerLine: isUnresolved ? node.startPosition.row + 1 : undefined,
-                doc: isUnresolved ? "Called/Instantiated but not defined in any scanned file. Likely from an external package or a dynamic import." : undefined
+              external: !!importSource, 
+              unresolved: isUnresolved, 
+              endLine: 0,
+              callerFile: isUnresolved ? filePath : undefined,
+              callerLine: isUnresolved ? node.startPosition.row + 1 : undefined,
+              doc: isUnresolved ? "Called/Instantiated but not defined in any scanned file. Likely from an external package or a dynamic import." : undefined
             }
           });
         }
         if (!graph.hasEdge(callerId, targetId)) {
-          graph.addEdge(callerId, targetId, { type: "references", confidence: "EXTRACTED" });
+          graph.addEdge(callerId, targetId, { type: "references", confidence: isUnresolved ? "AMBIGUOUS" : "EXTRACTED" });
         }
 
         if (importSource) {
-            const baseImportSource = getBasePackageName(importSource);
-            const resolvedSource = resolveImportToNode(importSource, filePath, aliases) || importSource;
-            const importNodeId = resolveImportToNode(importSource, filePath, aliases) || `import::${baseImportSource}`;
-            if (!graph.hasNode(importNodeId)) {
-                const nearestPkgJson = findNearestPackageJson(path.dirname(filePath));
-                graph.addNode(importNodeId, { 
-                    type: "file", 
-                    name: resolvedSource ? path.basename(resolvedSource) : baseImportSource, 
-                    file: resolvedSource || nearestPkgJson || filePath, 
-                    startLine: 0, 
-                    metadata: { external: true } 
-                });
-            }
-            if (!graph.hasEdge(importNodeId, targetId)) {
-                graph.addEdge(importNodeId, targetId, { type: "defines", confidence: "EXTRACTED" });
-            }
+          const baseImportSource = getBasePackageName(importSource);
+          const resolvedSource = resolveImportToNode(importSource, filePath, aliases) || importSource;
+          const importNodeId = resolveImportToNode(importSource, filePath, aliases) || `import::${baseImportSource}`;
+          if (!graph.hasNode(importNodeId)) {
+            const nearestPkgJson = findNearestPackageJson(path.dirname(filePath));
+            graph.addNode(importNodeId, { 
+              type: "file", 
+              name: resolvedSource ? path.basename(resolvedSource) : baseImportSource, 
+              file: resolvedSource || nearestPkgJson || filePath, 
+              startLine: 0, 
+              metadata: { external: true } 
+            });
+          }
+          if (!graph.hasEdge(importNodeId, targetId)) {
+            graph.addEdge(importNodeId, targetId, { type: "defines", confidence: "EXTRACTED" });
+          }
         }
 
       } else if (name === "call_name" || name === "constructor_name" || name === "call_method_name") {
@@ -494,71 +519,174 @@ export function parseTypeScript(
         let objectName = "";
 
         if (name === "call_method_name" && node.parent?.type === "member_expression") {
-            const objectNode = node.parent.childForFieldName("object");
-            if (objectNode) {
-                objectName = getRootIdentifier(objectNode);
-                if (objectName) {
-                    calledName = `${objectName}.${calledName}`;
-                }
+          const objectNode = node.parent.childForFieldName("object");
+          if (objectNode) {
+            objectName = getRootIdentifier(objectNode);
+            if (objectName) {
+              calledName = `${objectName}.${calledName}`;
             }
+          }
         }
 
         if (name === "call_method_name") {
-            if (BUILT_INS.has(methodName) && !localDefinitions.has(methodName) && !importMap.has(methodName)) {
-                continue;
-            }
+          if (BUILT_INS.has(methodName) && !localDefinitions.has(methodName) && !importMap.has(methodName)) {
+            continue;
+          }
         }
 
         const baseName = objectName || calledName;
-        
-        // If it's a method call (e.g. obj.method()) and the object is neither imported nor defined locally, skip it
-        if (objectName && !importMap.has(objectName) && !localDefinitions.has(objectName)) {
-            continue;
-        }
-
         if (BUILT_INS.has(baseName) && !localDefinitions.has(baseName) && !importMap.has(baseName)) continue;
 
-        const callerId = ensureScopeNode(node);
-        const importSource = importMap.get(baseName);
-        
-        const isCoreModule = importSource && (NODE_CORE_MODULES.has(importSource) || NODE_CORE_MODULES.has(importSource.replace(/^node:/, "")));
-        if (isCoreModule) continue;
+        const callerScope = getEnclosingScopePath(node.parent);
+        const callerId = callerScope ? `${filePath}::${callerScope}` : filePath;
 
-        let symId: string;
-        if (localDefinitions.has(baseName)) {
-            symId = `${filePath}::${calledName}`;
-        } else if (importSource) {
+        const targets: { id: string; confidence: "EXTRACTED" | "INFERRED" | "AMBIGUOUS" }[] = [];
+
+        if (objectName) {
+          const importSource = importMap.get(objectName);
+          if (importSource) {
+            const normalizedSource = importSource.replace(/^node:/, "");
+            const rootModule = normalizedSource.split("/")[0] as string;
+            const isCoreModule = !importSource.startsWith(".") && !importSource.startsWith("/") && (NODE_CORE_MODULES.has(normalizedSource) || NODE_CORE_MODULES.has(rootModule));
+            if (isCoreModule) continue;
+
             const resolvedSource = resolveImportToNode(importSource, filePath, aliases) || importSource;
-            symId = `${resolvedSource}::${calledName}`;
+            targets.push({
+              id: `${resolvedSource}::${methodName}`,
+              confidence: "EXTRACTED"
+            });
+          } else if (localDefinitions.has(objectName)) {
+            const localMatches = localMethodMap.get(methodName) || [];
+            if (localMatches.length === 1 && localMatches[0]) {
+              targets.push({
+                id: localMatches[0],
+                confidence: "EXTRACTED"
+              });
+            } else if (localMatches.length > 1) {
+              for (const matchId of localMatches) {
+                targets.push({
+                  id: matchId,
+                  confidence: "AMBIGUOUS"
+                });
+              }
+            } else {
+              targets.push({
+                id: `${filePath}::${objectName}.${methodName}`,
+                confidence: "EXTRACTED"
+              });
+            }
+          } else {
+            // objectName is a local instance variable (e.g. logger.log())
+            // Fuzzy match the method name against localMethodMap!
+            const localMatches = localMethodMap.get(methodName) || [];
+            if (localMatches.length === 1 && localMatches[0]) {
+              targets.push({
+                id: localMatches[0],
+                confidence: "EXTRACTED"
+              });
+            } else if (localMatches.length > 1) {
+              for (const matchId of localMatches) {
+                targets.push({
+                  id: matchId,
+                  confidence: "AMBIGUOUS"
+                });
+              }
+            }
+          }
         } else {
-            symId = `unresolved::${calledName}`;
+          const importSource = importMap.get(calledName);
+          if (importSource) {
+            const normalizedSource = importSource.replace(/^node:/, "");
+            const rootModule = normalizedSource.split("/")[0] as string;
+            const isCoreModule = !importSource.startsWith(".") && !importSource.startsWith("/") && (NODE_CORE_MODULES.has(normalizedSource) || NODE_CORE_MODULES.has(rootModule));
+            if (isCoreModule) continue;
+
+            const resolvedSource = resolveImportToNode(importSource, filePath, aliases) || importSource;
+            targets.push({
+              id: `${resolvedSource}::${calledName}`,
+              confidence: "EXTRACTED"
+            });
+          } else if (localDefinitions.has(calledName)) {
+            const localMatches = localMethodMap.get(calledName) || [];
+            if (localMatches.length === 1 && localMatches[0]) {
+              targets.push({
+                id: localMatches[0],
+                confidence: "EXTRACTED"
+              });
+            } else if (localMatches.length > 1) {
+              const callerScope = getEnclosingScopePath(node.parent);
+              let bestMatch = localMatches[0]!;
+              let maxCommon = -1;
+              for (const matchId of localMatches) {
+                const matchScope = matchId.split("::")[1] || "";
+                let common = 0;
+                const matchParts = matchScope.split(".");
+                const callerParts = callerScope.split(".");
+                for (let i = 0; i < Math.min(matchParts.length, callerParts.length); i++) {
+                  if (matchParts[i] === callerParts[i]) common++;
+                  else break;
+                }
+                if (common > maxCommon) {
+                  maxCommon = common;
+                  bestMatch = matchId;
+                }
+              }
+              targets.push({
+                id: bestMatch,
+                confidence: "EXTRACTED"
+              });
+            } else {
+              const scopePrefix = getEnclosingScopePath(node.parent?.parent);
+              targets.push({
+                id: scopePrefix ? `${filePath}::${scopePrefix}.${calledName}` : `${filePath}::${calledName}`,
+                confidence: "EXTRACTED"
+              });
+            }
+          } else {
+            targets.push({
+              id: `unresolved::${calledName}`,
+              confidence: "AMBIGUOUS"
+            });
+          }
         }
 
-        const isUnresolved = !importSource && !localDefinitions.has(baseName);
-
-        if (!graph.hasNode(symId)) {
+        for (const target of targets) {
+          const isUnresolved = target.id.startsWith("unresolved::");
+          const isExternal = target.id.startsWith("import::") || (!isUnresolved && !target.id.startsWith(filePath));
           const callLine = node.startPosition.row + 1;
-          const resolvedSource = (importSource && resolveImportToNode(importSource, filePath, aliases)) || importSource;
-          graph.addNode(symId, {
-            type: (name === "constructor_name" ? "class" : "function"),
-            name: calledName,
-            file: resolvedSource || filePath,
-            startLine: importSource ? 0 : callLine,
-            metadata: { 
-                external: !!importSource, 
+
+          if (!graph.hasNode(target.id)) {
+            let fileAttr = filePath;
+            if (isUnresolved) {
+              fileAttr = filePath;
+            } else if (target.id.includes("::")) {
+              fileAttr = target.id.split("::")[0] || filePath;
+            }
+
+            graph.addNode(target.id, {
+              type: (name === "constructor_name" ? "class" : "function"),
+              name: calledName,
+              file: fileAttr,
+              startLine: isExternal ? 0 : callLine,
+              metadata: { 
+                external: isExternal, 
                 unresolved: isUnresolved, 
-                endLine: importSource ? 0 : callLine,
+                endLine: isExternal ? 0 : callLine,
                 callerFile: isUnresolved ? filePath : undefined,
                 callerLine: isUnresolved ? callLine : undefined,
                 doc: isUnresolved ? "Called/Instantiated but not defined in any scanned file. Likely from an external package or a dynamic import." : undefined
-            }
-          });
+              }
+            });
+          }
+
+          if (callerId === target.id) continue;
+          if (!graph.hasEdge(callerId, target.id)) {
+            graph.addEdge(callerId, target.id, { type: "calls", confidence: target.confidence });
+          }
         }
 
-        if (!graph.hasEdge(callerId, symId)) {
-          graph.addEdge(callerId, symId, { type: "calls", confidence: "AMBIGUOUS" });
-        }
-
+        // Link external import package -> symbol
+        const importSource = importMap.get(baseName);
         if (importSource) {
           const baseImportSource = getBasePackageName(importSource);
           const resolvedSource = resolveImportToNode(importSource, filePath, aliases) || importSource;
@@ -573,8 +701,10 @@ export function parseTypeScript(
               metadata: { external: true }
             });
           }
-          if (!graph.hasEdge(importNodeId, symId)) {
-            graph.addEdge(importNodeId, symId, { type: "defines", confidence: "EXTRACTED" });
+          for (const target of targets) {
+            if (!graph.hasEdge(importNodeId, target.id)) {
+              graph.addEdge(importNodeId, target.id, { type: "defines", confidence: "EXTRACTED" });
+            }
           }
         }
       }

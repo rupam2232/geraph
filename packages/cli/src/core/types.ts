@@ -22,10 +22,13 @@ export interface WorkerMessage {
   nodes?: WorkerNode[];
   edges?: WorkerEdge[];
   error?: string;
+  hash?: string;
 }
 
 export interface WorkerTask {
   filePath: string;
   projectRoot: string;
   aliasMap: AliasMap;
+  action?: "parse" | "load-cache";
+  cachePath?: string;
 }

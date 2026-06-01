@@ -153,11 +153,12 @@ export function exportReportMarkdown(
         return `**${name}** [id: \`${n}\`]`;
       });
 
-      let communityLine = `- **Community ${comm.id}** (${comm.nodes.length} nodes, cohesion: ${comm.cohesion}) — ${memberStrings.join(", ")}`;
+      let communityLine = `- **Community (ID: \`${comm.id}\`)** (${comm.nodes.length} nodes, cohesion: ${comm.cohesion}) — ${memberStrings.join(", ")}`;
       if (realNodes.length > 5) {
         communityLine += `, and ${realNodes.length - 5} more.`;
       }
-      md += communityLine + "\n";
+      communityLine += `\n  *(To view all members: run \`geraph community ${comm.id}\` or use the \`get_community\` MCP tool with community_id=${comm.id})*\n`;
+      md += communityLine;
     }
   }
 
@@ -239,12 +240,16 @@ export function exportGraphHtml(
 
   const counts: Record<string, number> = {
     file: 0,
+    media: 0,
     class: 0,
     function: 0,
     intent: 0,
     type: 0,
     interface: 0,
     enum: 0,
+    struct: 0,
+    trait: 0,
+    macro: 0,
   };
 
   // Calculate node degrees for sizing and label logic
@@ -266,10 +271,13 @@ export function exportGraphHtml(
     class: "#F28E2B",
     function: "#ee272bff",
     intent: "#35d86eff",
-    media: "#9C755F",
+    media: "#843b11ff",
     type: "#B07AA1",
-    interface: "#B07AA1",
+    interface: "#e134b0ff",
     enum: "#59A14F",
+    struct: "#E15759",
+    trait: "#76B7B2",
+    macro: "#EDC948",
   };
 
   const RAW_NODES = graph.nodes().map((n) => {
@@ -406,7 +414,11 @@ export function exportGraphHtml(
     </div>
     <div id="legend">
       <div class="legend-item ${counts.file ? "" : "hidden"}"><div class="legend-item-left"><div class="legend-dot" style="background: ${COLORS.file};"></div> File</div><span class="legend-count">${counts.file || 0}</span></div>
+      <div class="legend-item ${counts.media ? "" : "hidden"}"><div class="legend-item-left"><div class="legend-dot" style="background: ${COLORS.media};"></div> Media</div><span class="legend-count">${counts.media || 0}</span></div>
       <div class="legend-item ${counts.class ? "" : "hidden"}"><div class="legend-item-left"><div class="legend-dot" style="background: ${COLORS.class};"></div> Class</div><span class="legend-count">${counts.class || 0}</span></div>
+      <div class="legend-item ${counts.struct ? "" : "hidden"}"><div class="legend-item-left"><div class="legend-dot" style="background: ${COLORS.struct};"></div> Struct</div><span class="legend-count">${counts.struct || 0}</span></div>
+      <div class="legend-item ${counts.trait ? "" : "hidden"}"><div class="legend-item-left"><div class="legend-dot" style="background: ${COLORS.trait};"></div> Trait</div><span class="legend-count">${counts.trait || 0}</span></div>
+      <div class="legend-item ${counts.macro ? "" : "hidden"}"><div class="legend-item-left"><div class="legend-dot" style="background: ${COLORS.macro};"></div> Macro</div><span class="legend-count">${counts.macro || 0}</span></div>
       <div class="legend-item ${counts.function ? "" : "hidden"}"><div class="legend-item-left"><div class="legend-dot" style="background: ${COLORS.function};"></div> Function</div><span class="legend-count">${counts.function || 0}</span></div>
       <div class="legend-item ${counts.type || counts.interface ? "" : "hidden"}"><div class="legend-item-left"><div class="legend-dot" style="background: ${COLORS.type};"></div> Type/Interface</div><span class="legend-count">${(counts.type || 0) + (counts.interface || 0)}</span></div>
       <div class="legend-item ${counts.enum ? "" : "hidden"}"><div class="legend-item-left"><div class="legend-dot" style="background: ${COLORS.enum};"></div> Enum</div><span class="legend-count">${counts.enum || 0}</span></div>

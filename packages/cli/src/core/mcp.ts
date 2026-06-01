@@ -22,7 +22,7 @@ export async function runMcpServer(
   const server = new Server(
     {
       name: "geraph",
-      version: "0.4.0",
+      version: "1.0.0",
     },
     {
       capabilities: {
@@ -254,7 +254,12 @@ export async function runMcpServer(
             "Triggers a full rebuild of the Geraph AST graph. Use this after making significant code modifications or pushing git commits to ensure your structural memory is up-to-date. (CLI Alternative: 'geraph scan')",
           inputSchema: {
             type: "object",
-            properties: {},
+            properties: {
+              force: {
+                type: "boolean",
+                description: "If true, fully ignore and rebuild all cache files (doing a clean scan from scratch)",
+              },
+            },
           },
         },
       ],
@@ -488,7 +493,9 @@ export async function runMcpServer(
           const { promisify } = await import("util");
           const execAsync = promisify(exec);
 
-          await execAsync("geraph scan", { cwd: targetDir });
+          const force = !!(args as Record<string, unknown>).force;
+          const cmd = force ? "geraph scan --force" : "geraph scan";
+          const { stdout, stderr } = await execAsync(cmd, { cwd: targetDir });
 
           const { loadGraph } = await import("./query.js");
           const newGraph = loadGraph(targetDir);
@@ -499,23 +506,64 @@ export async function runMcpServer(
             graph.addEdgeWithKey(edge, source, target, attr),
           );
 
-          let communitiesCount = 0;
-          try {
-            const { readFileSync } = await import("fs");
-            const { join } = await import("path");
-            const graphJsonPath = join(targetDir, ".geraph", "graph.json");
-            const raw = readFileSync(graphJsonPath, "utf8");
-            const data = JSON.parse(raw);
-            communitiesCount = data.analysis?.communities?.length || 0;
-          } catch {
-            // Ignore
+          // Strip ANSI escape codes
+          const stripAnsi = (str: string) =>
+            str.replace(
+              // eslint-disable-next-line no-control-regex
+              /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g,
+              "",
+            );
+          const cleanStdout = stripAnsi(stdout);
+          const cleanStderr = stripAnsi(stderr);
+
+          // Extract files count line and real warnings from stderr
+          const lines = cleanStderr
+            .split("\n")
+            .map((l) => l.trim())
+            .filter(Boolean);
+          let filesParsedLine = "";
+          const realWarnings: string[] = [];
+
+          // Keywords indicating temporary CLI loader/spinner status lines
+          const SPINNER_KEYWORDS = [
+            "Scanning codebase in",
+            "Initializing Knowledge Graph",
+            "Resolving call graph",
+            "Extracting Temporal Facts",
+            "Analyzing graph structure",
+            "Compressing graph into Caveman",
+          ];
+
+          for (const line of lines) {
+            if (line.includes("Successfully scanned and parsed")) {
+              // Strip leading checkmarks/spinners if any
+              filesParsedLine = line.replace(/^[^\w]+/, "").trim();
+            } else if (SPINNER_KEYWORDS.some((kw) => line.includes(kw))) {
+              // Skip the temporary loading line
+            } else {
+              realWarnings.push(line);
+            }
+          }
+
+          let outputText = "";
+          if (filesParsedLine) {
+            const displayLine = filesParsedLine.startsWith("Successfully")
+              ? filesParsedLine
+              : `Successfully ${filesParsedLine}`;
+            outputText += `${displayLine}\n\n`;
+          }
+
+          outputText += cleanStdout.trim();
+
+          if (realWarnings.length > 0) {
+            outputText += `\n\nWarnings/Errors:\n${realWarnings.join("\n")}`;
           }
 
           return {
             content: [
               {
                 type: "text",
-                text: `Graph successfully scanned and memory updated. Discovered ${graph.order} nodes, ${graph.size} edges, and ${communitiesCount} communities.`,
+                text: outputText.trim() || "Graph successfully scanned and memory updated.",
               },
             ],
           };

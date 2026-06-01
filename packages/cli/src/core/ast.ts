@@ -3,70 +3,103 @@ import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
 import { Worker } from "worker_threads";
-import crypto from "crypto";
 import chalk from "chalk";
 import { Ora } from "ora";
 import { MultiDirectedGraph } from "graphology";
 import { NodeData, EdgeData } from "./graph.js";
-import { WorkerMessage, WorkerTask, AliasMap } from "./types.js";
+import { WorkerMessage, WorkerTask, WorkerNode, WorkerEdge } from "./types.js";
+import { buildAliasMap } from "./alias.js";
 
-function getFileHash(
-  filePath: string,
-  rootDir: string,
-  aliasMap: AliasMap,
-): string {
-  const content = fs.readFileSync(filePath);
-  const relPath = path.relative(rootDir, filePath).toLowerCase();
-
-  const h = crypto.createHash("sha256");
-  h.update(content);
-  h.update(Buffer.from("\x00"));
-  h.update(Buffer.from(relPath));
-  h.update(Buffer.from("\x00"));
-  h.update(Buffer.from(JSON.stringify(aliasMap)));
-  return h.digest("hex");
+interface StatEntry {
+  size: number;
+  mtimeMs: number;
+  hash: string;
 }
+
+interface StatIndex {
+  __version__?: string;
+  [filePath: string]: StatEntry | string | undefined;
+}
+
+const STAT_INDEX_VERSION = "2";
 
 export async function extractAst(
   files: string[],
   graph: MultiDirectedGraph<NodeData, EdgeData>,
   targetDir: string,
-  aliasMap: AliasMap,
   spinner: Ora,
+  force = false,
 ): Promise<void> {
+  const aliasMap = buildAliasMap(files);
   const astCacheDir = path.join(targetDir, ".geraph", "cache", "ast");
   if (!fs.existsSync(astCacheDir))
     fs.mkdirSync(astCacheDir, { recursive: true });
 
-  const queue: { file: string; hash: string }[] = [];
+  const statIndexFile = path.join(targetDir, ".geraph", "cache", "stat-index.json");
+  let statIndex: StatIndex = {};
+  let statIndexDirty = false;
+  if (!force && fs.existsSync(statIndexFile)) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(statIndexFile, "utf-8"));
+      if (parsed.__version__ === STAT_INDEX_VERSION) {
+        statIndex = parsed;
+      } else {
+        statIndex = { __version__: STAT_INDEX_VERSION };
+        statIndexDirty = true;
+      }
+    } catch {
+      statIndex = { __version__: STAT_INDEX_VERSION };
+      statIndexDirty = true;
+    }
+  } else {
+    statIndex = { __version__: STAT_INDEX_VERSION };
+    statIndexDirty = true;
+  }
+
   let cachedCount = 0;
 
-  // 1. Gather all parsed elements deterministically
   const resultsMap = new Map<
     string,
     {
-      nodes?: { id: string; attr: NodeData }[];
-      edges?: { source: string; target: string; attr: EdgeData }[];
+      nodes?: WorkerNode[];
+      edges?: WorkerEdge[];
     }
   >();
 
+  const queue: {
+    file: string;
+    action: "parse" | "load-cache";
+    cachePath?: string;
+    expectedStat?: { size: number; mtimeMs: number };
+  }[] = [];
+
   for (const file of files) {
     try {
-      const hash = getFileHash(file, targetDir, aliasMap);
-      const cachePath = path.join(astCacheDir, `${hash}.json`);
-
-      if (fs.existsSync(cachePath)) {
-        const cached = JSON.parse(fs.readFileSync(cachePath, "utf-8")) as {
-          nodes?: { id: string; attr: NodeData }[];
-          edges?: { source: string; target: string; attr: EdgeData }[];
-        };
-        resultsMap.set(file, { nodes: cached.nodes, edges: cached.edges });
-        cachedCount++;
-      } else {
-        queue.push({ file, hash });
+      const stat = fs.statSync(file);
+      const entry = statIndex[file];
+      if (!force && entry && typeof entry === "object" && entry.size === stat.size && entry.mtimeMs === stat.mtimeMs) {
+        const cachePath = path.join(astCacheDir, `${entry.hash}.json`);
+        if (fs.existsSync(cachePath)) {
+          queue.push({
+            file,
+            action: "load-cache",
+            cachePath,
+          });
+          cachedCount++;
+          continue;
+        }
       }
+      
+      queue.push({
+        file,
+        action: "parse",
+        expectedStat: { size: stat.size, mtimeMs: stat.mtimeMs },
+      });
     } catch {
-      queue.push({ file, hash: "" });
+      queue.push({
+        file,
+        action: "parse",
+      });
     }
   }
 
@@ -78,7 +111,7 @@ export async function extractAst(
     spinner.start();
   } else {
     spinner.text = chalk.gray(
-      `Parsing AST for ${queue.length} files (${cachedCount} cached)...`,
+      `Parsing AST for ${files.length - cachedCount} files (${cachedCount} cached)...`,
     );
   }
 
@@ -90,7 +123,7 @@ export async function extractAst(
       "worker.js",
     );
 
-    let parsedCount = 0;
+    let completedCount = 0;
     const workers = Array.from(
       { length: numWorkers },
       () => new Worker(workerPath),
@@ -98,70 +131,85 @@ export async function extractAst(
 
     await Promise.all(
       workers.map(async (worker) => {
-      while (queue.length > 0) {
-        const item = queue.shift();
-        if (!item) break;
-        const { file, hash } = item;
+        while (queue.length > 0) {
+          const item = queue.shift();
+          if (!item) break;
+          const { file, action, cachePath, expectedStat } = item;
 
-        await new Promise<void>((resolve) => {
-          const onMessage = (msg: WorkerMessage) => {
-            if (msg.error) {
-              console.error(
-                chalk.yellow(
-                  `\n\u26A0\u3000Worker error for ${file}: ${msg.error}`,
-                ),
-              );
-            } else {
-              resultsMap.set(file, { nodes: msg.nodes, edges: msg.edges });
+          await new Promise<void>((resolve) => {
+            const onMessage = (msg: WorkerMessage) => {
+              if (msg.error) {
+                console.error(
+                  chalk.yellow(
+                    `\n\u26A0\u3000Worker error for ${file}: ${msg.error}`,
+                  ),
+                );
+              } else {
+                resultsMap.set(file, { nodes: msg.nodes, edges: msg.edges });
 
-              if (hash) {
-                try {
-                  const cachePath = path.join(astCacheDir, `${hash}.json`);
-                  fs.writeFileSync(
-                    cachePath,
-                    JSON.stringify({ nodes: msg.nodes, edges: msg.edges }),
-                  );
-                } catch {
-                  // ignore
+                if (action === "parse" && msg.hash && expectedStat) {
+                  statIndex[file] = {
+                    size: expectedStat.size,
+                    mtimeMs: expectedStat.mtimeMs,
+                    hash: msg.hash,
+                  };
+                  statIndexDirty = true;
                 }
               }
-            }
-            parsedCount++;
-            spinner.text = chalk.gray(
-              `Parsing AST: ${parsedCount}/${
-                files.length - cachedCount
-              } files...`,
-            );
-            worker.off("message", onMessage);
-            worker.off("error", onError);
-            resolve();
-          };
+              completedCount++;
+              spinner.text = chalk.gray(
+                `Parsing AST: ${completedCount}/${files.length} files...`,
+              );
+              worker.off("message", onMessage);
+              worker.off("error", onError);
+              resolve();
+            };
 
-          const onError = (err: Error) => {
-            console.error(
-              chalk.red(`Worker error on ${file}: ${err.message}`),
-            );
-            parsedCount++;
-            worker.off("message", onMessage);
-            worker.off("error", onError);
-            resolve();
-          };
+            const onError = (err: Error) => {
+              console.error(
+                chalk.red(`Worker error on ${file}: ${err.message}`),
+              );
+              completedCount++;
+              worker.off("message", onMessage);
+              worker.off("error", onError);
+              resolve();
+            };
 
-          worker.on("message", onMessage);
-          worker.on("error", onError);
-          worker.postMessage({
-            filePath: file,
-            projectRoot: targetDir,
-            aliasMap,
-          } satisfies WorkerTask);
-        });
-      }
-      await worker.terminate();
-    }),
-  );
+            worker.on("message", onMessage);
+            worker.on("error", onError);
+            worker.postMessage({
+              filePath: file,
+              projectRoot: targetDir,
+              aliasMap,
+              action,
+              cachePath,
+            } satisfies WorkerTask);
+          });
+        }
+        await worker.terminate();
+      }),
+    );
   }
 
-  // 2. Insert into the graph sequentially and deterministically
+  if (statIndexDirty) {
+    try {
+      const tempPath = path.join(targetDir, ".geraph", "cache", `stat-index.${Date.now()}.${Math.random().toString(36).substring(2)}.tmp`);
+      fs.writeFileSync(tempPath, JSON.stringify(statIndex, null, 2), "utf-8");
+      try {
+        fs.renameSync(tempPath, statIndexFile);
+      } catch {
+        try {
+          fs.copyFileSync(tempPath, statIndexFile);
+          fs.unlinkSync(tempPath);
+        } catch {
+          // ignore lock issues on Windows
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   for (const file of files) {
     const res = resultsMap.get(file);
     if (!res) continue;
