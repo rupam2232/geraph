@@ -1,6 +1,6 @@
 import { MultiDirectedGraph } from "graphology";
 import louvain from "graphology-communities-louvain";
-import type { NodeData, EdgeData } from "./graph.js";
+import { NodeData, EdgeData, createKnowledgeGraph } from "./graph.js";
 
 type LouvainAlgorithm = (
   graph: MultiDirectedGraph<NodeData, EdgeData>,
@@ -102,7 +102,7 @@ export function detectCommunities(
   };
 
   // Create a sorted, deterministic copy of the graph to guarantee stable community detection
-  const deterministicGraph = new MultiDirectedGraph<NodeData, EdgeData>();
+  const deterministicGraph = createKnowledgeGraph();
   
   // Sort node IDs alphabetically
   const sortedNodeIds = [...graph.nodes()].sort();

@@ -17,7 +17,7 @@ const BUILT_INS = new Set([
   "split", "replace", "replaceAll", "match", "matchAll", "search", "substring", "substr", "trim", "trimStart", "trimEnd", "charAt", "charCodeAt", "codePointAt", "concat", "repeat", "normalize", "startsWith", "endsWith", "padStart", "padEnd", "toLowerCase", "toUpperCase", "toLocaleLowerCase", "toLocaleUpperCase", "exec", "test",
   "join", "getDate", "getDay", "getFullYear", "getHours", "getMilliseconds", "getMinutes", "getMonth", "getSeconds", "getTime", "getTimezoneOffset", "getUTCDate", "getUTCDay", "getUTCFullYear", "getUTCHours", "getUTCMilliseconds", "getUTCMinutes", "getUTCMonth", "getUTCSeconds", "setDate", "setFullYear", "setHours", "setMilliseconds", "setMinutes", "setMonth", "setSeconds", "setTime", "setUTCDate", "setUTCFullYear", "setUTCHours", "setUTCMilliseconds", "setUTCMinutes", "setUTCMonth", "setUTCSeconds", "toISOString", "toJSON", "toDateString", "toTimeString", "toUTCString", "toLocaleDateString", "toLocaleTimeString",
   "then", "catch", "finally", "from", "of", "fromEntries", "fromCharCode", "fromCodePoint", "parseInt", "parseFloat", "isNaN", "isFinite", "isInteger", "isSafeInteger", "toFixed", "toPrecision", "toExponential", "call", "apply", "bind", "next", "cwd", "exit", "chdir", "memoryUsage", "hrtime", "nextTick", "uptime", "cpuUsage", "resourceUsage", "send", "abort", "on", "off", "emit", "once", "removeListener", "removeAllListeners", "addListener", "listeners", "listenerCount", "eventNames", "prependListener", "construct", "ownKeys", "for", "keyFor", "format", "formatToParts", "resolvedOptions", "supportedLocalesOf",
-  "Partial", "Required", "Readonly", "Record", "Pick", "Omit", "Exclude", "Extract", "NonNullable", "Parameters", "ConstructorParameters", "ReturnType", "InstanceType", "ThisParameterType", "OmitThisParameter", "ThisType", "Awaited", "String", "Number", "Boolean", "Symbol", "Object", "Array", "Promise", "Date", "Error", "RegExp", "URL", "URLSearchParams", "Headers", "Request", "Response",
+  "Partial", "Required", "Readonly", "Record", "Pick", "Omit", "Exclude", "Extract", "NonNullable", "Parameters", "ConstructorParameters", "ReturnType", "InstanceType", "ThisParameterType", "OmitThisParameter", "ThisType", "Awaited", "String", "Number", "Boolean", "Symbol", "Object", "Array", "Promise", "Date", "Error", "RegExp", "URL", "URLSearchParams", "Headers", "Request", "Response", "Set", "Map",
   "JSON", "Math", "console", "process", "Buffer", "resolve", "reject", "fetch", "setTimeout", "setInterval", "clearTimeout", "clearInterval",
   "postMessage", "terminate", "info", "warn", "error", "debug", "succeed", "fail", "start", "stop", "command", "option", "action", "description", "parse", "version"
 ]);
@@ -112,6 +112,75 @@ function readSourceFile(filePath: string): string {
     content = content.slice(1);
   }
   return content.replace(/\0/g, "");
+}
+
+function isLocalDeclaration(startNode: Parser.SyntaxNode | null | undefined, name: string): boolean {
+  let current = startNode;
+  const checkPattern = (patternNode: Parser.SyntaxNode): boolean => {
+    if (
+      patternNode.type === "identifier" ||
+      patternNode.type === "shorthand_property_identifier" ||
+      patternNode.type === "shorthand_property_identifier_pattern" ||
+      patternNode.type === "type_identifier"
+    ) {
+      return patternNode.text.trim() === name;
+    }
+    for (let i = 0; i < patternNode.namedChildCount; i++) {
+      const child = patternNode.namedChild(i);
+      if (child && checkPattern(child)) return true;
+    }
+    return false;
+  };
+
+  while (current) {
+    if (
+      current.type === "function_declaration" ||
+      current.type === "arrow_function" ||
+      current.type === "function_expression" ||
+      current.type === "method_definition" ||
+      current.type === "class_declaration" ||
+      current.type === "abstract_class_declaration" ||
+      current.type === "interface_declaration" ||
+      current.type === "type_alias_declaration"
+    ) {
+      const paramsNode = current.childForFieldName("parameters") || current.namedChildren.find(c => c.type === "formal_parameters" || c.type === "parameter_list");
+      if (paramsNode && checkPattern(paramsNode)) {
+        return true;
+      }
+      if (current.type === "arrow_function") {
+        const firstChild = current.namedChild(0);
+        if (firstChild && firstChild.type === "identifier" && firstChild.text.trim() === name) {
+          return true;
+        }
+      }
+      const typeParamsNode = current.childForFieldName("type_parameters") || current.namedChildren.find(c => c.type === "type_parameters");
+      if (typeParamsNode && checkPattern(typeParamsNode)) {
+        return true;
+      }
+    }
+
+    if (current.type === "statement_block" || current.type === "program") {
+      for (let i = 0; i < current.namedChildCount; i++) {
+        const statement = current.namedChild(i);
+        if (!statement) continue;
+
+        if (statement.type === "lexical_declaration" || statement.type === "variable_declaration") {
+          for (let j = 0; j < statement.namedChildCount; j++) {
+            const declarator = statement.namedChild(j);
+            if (declarator && declarator.type === "variable_declarator") {
+              const nameNode = declarator.childForFieldName("name");
+              if (nameNode && checkPattern(nameNode)) {
+                return true;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    current = current.parent;
+  }
+  return false;
 }
 
 export function parseTypeScript(
@@ -455,6 +524,8 @@ export function parseTypeScript(
         
         if (["interface_declaration", "type_alias_declaration", "import_specifier", "class_declaration", "function_declaration", "variable_declarator"].includes(node.parent?.type || "")) continue;
 
+        if (isLocalDeclaration(node, referencedTypeName)) continue;
+
         const callerScope = getEnclosingScopePath(node.parent);
         const callerId = callerScope ? `${filePath}::${callerScope}` : filePath;
         const importSource = importMap.get(moduleName || referencedTypeName);
@@ -463,16 +534,18 @@ export function parseTypeScript(
         if (isCoreModule) continue;
 
         let targetId: string;
-        if (localDefinitions.has(referencedTypeName)) {
-          targetId = `${filePath}::${referencedTypeName}`;
-        } else if (importSource) {
+        if (importSource) {
           const resolvedSource = resolveImportToNode(importSource, filePath, aliases) || importSource;
           targetId = `${resolvedSource}::${referencedTypeName}`;
+        } else if (localDefinitions.has(referencedTypeName)) {
+          targetId = `${filePath}::${referencedTypeName}`;
         } else {
           targetId = `unresolved::${referencedTypeName}`;
         }
 
         const isUnresolved = !importSource && !localDefinitions.has(referencedTypeName);
+
+        if (callerId === targetId) continue;
 
         if (!graph.hasNode(targetId)) {
           graph.addNode(targetId, {
@@ -536,6 +609,8 @@ export function parseTypeScript(
 
         const baseName = objectName || calledName;
         if (BUILT_INS.has(baseName) && !localDefinitions.has(baseName) && !importMap.has(baseName)) continue;
+
+        if (isLocalDeclaration(node, objectName || calledName)) continue;
 
         const callerScope = getEnclosingScopePath(node.parent);
         const callerId = callerScope ? `${filePath}::${callerScope}` : filePath;
