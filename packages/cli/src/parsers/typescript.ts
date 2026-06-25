@@ -272,6 +272,7 @@ export function parseTypeScript(
   if (!tree) return;
 
   const importMap = new Map<string, string>();
+  const importOriginalNameMap = new Map<string, string>();
   const localDefinitions = new Set<string>(); 
   const localMethodMap = new Map<string, string[]>();
 
@@ -413,8 +414,12 @@ export function parseTypeScript(
           const aliasNode = capture.node.childForFieldName("alias");
           const nameNode = capture.node.childForFieldName("name");
           const localName = aliasNode ? aliasNode.text.trim() : (nameNode ? nameNode.text.trim() : "");
+          const originalName = nameNode ? nameNode.text.trim() : "";
           if (localName) {
             importMap.set(localName, currentSource);
+            if (originalName && originalName !== localName) {
+              importOriginalNameMap.set(localName, originalName);
+            }
           }
         }
       }
@@ -606,7 +611,8 @@ export function parseTypeScript(
         let targetId: string;
         if (importSource) {
           const resolvedSource = resolveImportToNode(importSource, filePath, aliases) || importSource;
-          targetId = `${resolvedSource}::${referencedTypeName}`;
+          const originalName = importOriginalNameMap.get(moduleName || referencedTypeName) || referencedTypeName;
+          targetId = `${resolvedSource}::${originalName}`;
         } else if (localDefinitions.has(referencedTypeName)) {
           targetId = `${filePath}::${referencedTypeName}`;
         } else {
@@ -747,8 +753,9 @@ export function parseTypeScript(
             if (isCoreModule) continue;
 
             const resolvedSource = resolveImportToNode(importSource, filePath, aliases) || importSource;
+            const originalName = importOriginalNameMap.get(calledName) || calledName;
             targets.push({
-              id: `${resolvedSource}::${calledName}`,
+              id: `${resolvedSource}::${originalName}`,
               confidence: "EXTRACTED"
             });
           } else if (localDefinitions.has(calledName)) {

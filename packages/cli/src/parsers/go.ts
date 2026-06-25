@@ -171,6 +171,87 @@ const getGoReceiverType = (node: Node): string => {
   return typeName;
 };
 
+function isLocalDeclaration(startNode: Parser.SyntaxNode | null | undefined, name: string): boolean {
+  let current = startNode;
+  const checkPattern = (patternNode: Parser.SyntaxNode): boolean => {
+    if (patternNode.type === "identifier") {
+      return patternNode.text.trim() === name;
+    }
+    for (let i = 0; i < patternNode.namedChildCount; i++) {
+      const child = patternNode.namedChild(i);
+      if (child && checkPattern(child)) return true;
+    }
+    return false;
+  };
+
+  while (current) {
+    if (
+      current.type === "function_declaration" ||
+      current.type === "method_declaration" ||
+      current.type === "func_literal"
+    ) {
+      const signature = current.childForFieldName("signature");
+      if (signature) {
+        const params = signature.childForFieldName("parameters");
+        if (params && checkPattern(params)) return true;
+        const results = signature.childForFieldName("results");
+        if (results && checkPattern(results)) return true;
+      }
+      if (current.type === "method_declaration") {
+        const receiver = current.childForFieldName("receiver");
+        if (receiver && checkPattern(receiver)) return true;
+      }
+    }
+
+    if (current.type === "for_statement") {
+      const findLoopVars = (n: Parser.SyntaxNode): boolean => {
+        if (n.type === "range_clause" || n.type === "short_var_declaration") {
+          const leftNode = n.childForFieldName("left");
+          if (leftNode && checkPattern(leftNode)) return true;
+        }
+        for (let i = 0; i < n.namedChildCount; i++) {
+          const child = n.namedChild(i);
+          if (child && findLoopVars(child)) return true;
+        }
+        return false;
+      };
+      if (findLoopVars(current)) return true;
+    }
+
+    if (current.type === "block" || current.type === "source_file") {
+      for (let i = 0; i < current.namedChildCount; i++) {
+        const statement = current.namedChild(i);
+        if (!statement) continue;
+
+        if (statement.type === "short_var_declaration") {
+          const left = statement.childForFieldName("left");
+          if (left && checkPattern(left)) {
+            if (statement.startIndex <= (startNode?.startIndex ?? 0)) return true;
+          }
+        } else if (statement.type === "var_declaration" || statement.type === "const_declaration") {
+          const findVars = (n: Parser.SyntaxNode): boolean => {
+            if (n.type === "var_spec" || n.type === "const_spec") {
+              const nameNode = n.childForFieldName("name") || n.namedChild(0);
+              if (nameNode && checkPattern(nameNode)) return true;
+            }
+            for (let j = 0; j < n.namedChildCount; j++) {
+              const child = n.namedChild(j);
+              if (child && findVars(child)) return true;
+            }
+            return false;
+          };
+          if (findVars(statement)) {
+            if (statement.startIndex <= (startNode?.startIndex ?? 0)) return true;
+          }
+        }
+      }
+    }
+
+    current = current.parent;
+  }
+  return false;
+}
+
 function readSourceFile(filePath: string): string {
   const buffer = fs.readFileSync(filePath);
   if (buffer.length >= 2 && buffer[0] === 0xFF && buffer[1] === 0xFE) {
@@ -408,6 +489,7 @@ export function parseGo(
       else if (captureName === "call_name") {
         const calledName = node.text.trim();
         if (!calledName || GO_BUILT_INS.has(calledName)) continue;
+        if (isLocalDeclaration(node, calledName)) continue;
 
         const callerScope = getEnclosingScopePath(node.parent);
         const callerId = callerScope ? `${filePath}::${callerScope}` : filePath;
@@ -473,6 +555,7 @@ export function parseGo(
         if (operandName && GO_STDLIB_PACKAGES.has(operandName)) {
           continue;
         }
+        if (isLocalDeclaration(node, operandName || methodName)) continue;
 
         const callerScope = getEnclosingScopePath(node.parent);
         const callerId = callerScope ? `${filePath}::${callerScope}` : filePath;
@@ -548,6 +631,7 @@ export function parseGo(
       else if (captureName === "type_reference") {
         const referencedTypeName = node.text.trim();
         if (!referencedTypeName || GO_BUILT_INS.has(referencedTypeName)) continue;
+        if (isLocalDeclaration(node, referencedTypeName)) continue;
 
         // Skip type references inside method receiver parameters to avoid circular edges or early-match node missing errors
         let inReceiver = false;

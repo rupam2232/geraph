@@ -123,6 +123,68 @@ function extractCppComment(node: Node): string | undefined {
   return comments.length > 0 ? comments.join("\n") : undefined;
 }
 
+function isLocalDeclaration(startNode: Parser.SyntaxNode | null | undefined, name: string): boolean {
+  let current = startNode;
+  const checkPattern = (patternNode: Parser.SyntaxNode): boolean => {
+    if (patternNode.type === "identifier" || patternNode.type === "field_identifier") {
+      return patternNode.text.trim() === name;
+    }
+    for (let i = 0; i < patternNode.namedChildCount; i++) {
+      const child = patternNode.namedChild(i);
+      if (child && checkPattern(child)) return true;
+    }
+    return false;
+  };
+
+  while (current) {
+    if (
+      current.type === "function_definition" ||
+      current.type === "lambda_expression"
+    ) {
+      const findParams = (n: Parser.SyntaxNode): boolean => {
+        if (n.type === "parameter_list") {
+          return checkPattern(n);
+        }
+        for (let i = 0; i < n.namedChildCount; i++) {
+          const child = n.namedChild(i);
+          if (child && findParams(child)) return true;
+        }
+        return false;
+      };
+      if (findParams(current)) return true;
+    }
+
+    if (current.type === "compound_statement") {
+      for (let i = 0; i < current.namedChildCount; i++) {
+        const statement = current.namedChild(i);
+        if (!statement) continue;
+
+        if (statement.type === "declaration") {
+          const findVars = (n: Parser.SyntaxNode): boolean => {
+            if (n.type === "init_declarator") {
+              const declarator = n.childForFieldName("declarator") || n.namedChild(0);
+              if (declarator && checkPattern(declarator)) return true;
+            } else if (n.type === "identifier" || n.type === "field_identifier") {
+              if (n.text.trim() === name) return true;
+            }
+            for (let j = 0; j < n.namedChildCount; j++) {
+              const child = n.namedChild(j);
+              if (child && findVars(child)) return true;
+            }
+            return false;
+          };
+          if (findVars(statement)) {
+            if (statement.startIndex <= (startNode?.startIndex ?? 0)) return true;
+          }
+        }
+      }
+    }
+
+    current = current.parent;
+  }
+  return false;
+}
+
 function readSourceFile(filePath: string): string {
   const buffer = fs.readFileSync(filePath);
   if (buffer.length >= 2 && buffer[0] === 0xFF && buffer[1] === 0xFE) {
@@ -381,6 +443,7 @@ export function parseCpp(
       else if (captureName === "call_name") {
         const calledName = node.text.trim();
         if (!calledName || CPP_BUILT_INS.has(calledName)) continue;
+        if (isLocalDeclaration(node, calledName)) continue;
 
         const callerScope = getEnclosingScopePath(node.parent);
         const callerId = callerScope ? `${filePath}::${callerScope}` : filePath;
@@ -468,6 +531,13 @@ export function parseCpp(
         const methodName = node.text.trim();
         if (!methodName || CPP_BUILT_INS.has(methodName)) continue;
 
+        let objectName = "";
+        if (node.parent && node.parent.type === "field_expression") {
+          const objectNode = node.parent.childForFieldName("object");
+          if (objectNode) objectName = objectNode.text.trim();
+        }
+        if (isLocalDeclaration(node, objectName || methodName)) continue;
+
         const callerScope = getEnclosingScopePath(node.parent);
         const callerId = callerScope ? `${filePath}::${callerScope}` : filePath;
         const targets: { id: string; confidence: "EXTRACTED" | "INFERRED" | "AMBIGUOUS" }[] = [];
@@ -535,6 +605,7 @@ export function parseCpp(
 
         const referencedTypeName = node.text.trim();
         if (!referencedTypeName || CPP_BUILT_INS.has(referencedTypeName)) continue;
+        if (isLocalDeclaration(node, referencedTypeName)) continue;
 
         const callerScope = getEnclosingScopePath(node.parent);
         const callerId = callerScope ? `${filePath}::${callerScope}` : filePath;
