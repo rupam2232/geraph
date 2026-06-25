@@ -208,6 +208,148 @@ const getRustImplType = (node: Node): string => {
   return typeName;
 };
 
+interface ExtractedRustImport {
+  localName: string;
+  originalName: string;
+  usePath: string;
+}
+
+function extractRustImports(node: Node, prefix = ""): ExtractedRustImport[] {
+  const imports: ExtractedRustImport[] = [];
+
+  const recurse = (n: Node, currentPrefix: string) => {
+    if (n.type === "identifier") {
+      const name = n.text.trim();
+      imports.push({
+        localName: name,
+        originalName: name,
+        usePath: currentPrefix ? `${currentPrefix}::${name}` : name
+      });
+    } else if (n.type === "scoped_identifier") {
+      const fullPath = n.text.trim();
+      const name = fullPath.split("::").pop() || fullPath;
+      imports.push({
+        localName: name,
+        originalName: name,
+        usePath: currentPrefix ? `${currentPrefix}::${fullPath}` : fullPath
+      });
+    } else if (n.type === "use_as_clause") {
+      const origNode = n.namedChild(0);
+      const aliasNode = n.namedChild(1);
+      if (origNode && aliasNode) {
+        const origPath = origNode.text.trim();
+        const origName = origPath.split("::").pop() || origPath;
+        const alias = aliasNode.text.trim();
+        imports.push({
+          localName: alias,
+          originalName: origName,
+          usePath: currentPrefix ? `${currentPrefix}::${origPath}` : origPath
+        });
+      }
+    } else if (n.type === "scoped_use_list") {
+      const pathNode = n.namedChild(0);
+      const listNode = n.namedChild(1);
+      if (pathNode && listNode) {
+        const pathText = pathNode.text.trim();
+        const nextPrefix = currentPrefix ? `${currentPrefix}::${pathText}` : pathText;
+        recurse(listNode, nextPrefix);
+      }
+    } else if (n.type === "use_list") {
+      for (let i = 0; i < n.namedChildCount; i++) {
+        const child = n.namedChild(i);
+        if (!child) continue;
+
+        if (child.type === "self") {
+          const lastPart = currentPrefix.split("::").pop() || currentPrefix;
+          imports.push({
+            localName: lastPart,
+            originalName: lastPart,
+            usePath: currentPrefix
+          });
+        } else {
+          recurse(child, currentPrefix);
+        }
+      }
+    }
+  };
+
+  recurse(node, prefix);
+  return imports;
+}
+
+function isLocalDeclaration(startNode: Parser.SyntaxNode | null | undefined, name: string): boolean {
+  let current = startNode;
+  const checkPattern = (patternNode: Parser.SyntaxNode): boolean => {
+    if (
+      patternNode.type === "identifier" ||
+      patternNode.type === "type_identifier"
+    ) {
+      return patternNode.text.trim() === name;
+    }
+    for (let i = 0; i < patternNode.namedChildCount; i++) {
+      const child = patternNode.namedChild(i);
+      if (child && checkPattern(child)) return true;
+    }
+    return false;
+  };
+
+  while (current) {
+    if (
+      current.type === "function_item" ||
+      current.type === "closure_expression"
+    ) {
+      const paramsNode = current.childForFieldName("parameters");
+      if (paramsNode && checkPattern(paramsNode)) {
+        return true;
+      }
+      const typeParamsNode = current.childForFieldName("type_parameters");
+      if (typeParamsNode && checkPattern(typeParamsNode)) {
+        return true;
+      }
+    }
+
+    if (current.type === "for_expression") {
+      const patternNode = current.childForFieldName("pattern");
+      if (patternNode && checkPattern(patternNode)) {
+        return true;
+      }
+    }
+
+    if (current.type === "match_arm") {
+      const patternNode = current.childForFieldName("pattern");
+      if (patternNode && checkPattern(patternNode)) {
+        return true;
+      }
+    }
+
+    if (current.type === "if_let_expression" || current.type === "while_let_expression") {
+      const patternNode = current.childForFieldName("pattern");
+      if (patternNode && checkPattern(patternNode)) {
+        return true;
+      }
+    }
+
+    if (current.type === "block") {
+      for (let i = 0; i < current.namedChildCount; i++) {
+        const statement = current.namedChild(i);
+        if (!statement) continue;
+
+        if (statement.type === "let_declaration") {
+          const patternNode = statement.childForFieldName("pattern") || statement.namedChild(0);
+          if (patternNode && checkPattern(patternNode)) {
+            if (statement.startIndex <= (startNode?.startIndex ?? 0)) {
+              return true;
+            }
+          }
+        }
+      }
+    }
+
+    current = current.parent;
+  }
+  return false;
+}
+
 function readSourceFile(filePath: string): string {
   const buffer = fs.readFileSync(filePath);
   if (buffer.length >= 2 && buffer[0] === 0xFF && buffer[1] === 0xFE) {
@@ -252,7 +394,31 @@ export function parseRust(
 
   const localDefinitions = new Set<string>();
   const importMap = new Map<string, string>(); // symName -> usePath
+  const importOriginalNameMap = new Map<string, string>(); // localName -> originalName
   const localMethodMap = new Map<string, string[]>();
+
+  const getRootIdentifier = (node: Node | null): string => {
+    if (!node) return "";
+    if (node.type === "identifier" || node.type === "self" || node.type === "Self" || node.type === "super" || node.type === "crate") {
+      return node.text.trim();
+    }
+    if (node.type === "field_expression") {
+      return getRootIdentifier(node.childForFieldName("value"));
+    }
+    if (node.type === "call_expression") {
+      return getRootIdentifier(node.childForFieldName("function"));
+    }
+    if (
+      node.type === "await_expression" ||
+      node.type === "try_expression" ||
+      node.type === "parenthesized_expression" ||
+      node.type === "type_cast_expression"
+    ) {
+      const valueNode = node.childForFieldName("value") || node.namedChild(0);
+      return getRootIdentifier(valueNode);
+    }
+    return "";
+  };
 
   const queryString = `
     (use_declaration argument: (_) @use_source)
@@ -302,9 +468,15 @@ export function parseRust(
       const captureName = capture.name;
 
       if (captureName === "use_source") {
-        const usePath = node.text.trim();
-        const symName = usePath.split("::").pop() || usePath;
-        importMap.set(symName, usePath);
+        const extracted = extractRustImports(node);
+        for (const imp of extracted) {
+          if (imp.localName && imp.usePath) {
+            importMap.set(imp.localName, imp.usePath);
+            if (imp.originalName && imp.originalName !== imp.localName) {
+              importOriginalNameMap.set(imp.localName, imp.originalName);
+            }
+          }
+        }
       } else if (
         captureName === "struct_decl" ||
         captureName === "enum_decl" ||
@@ -383,33 +555,37 @@ export function parseRust(
       }
 
       else if (captureName === "use_source") {
-        const usePath = node.text.trim();
-        if (usePath === "" || usePath === "*" || usePath === "self" || usePath === "super") continue;
+        const extracted = extractRustImports(node);
+        for (const imp of extracted) {
+          const usePath = imp.usePath;
+          if (usePath === "" || usePath === "*" || usePath === "self" || usePath === "super") continue;
 
-        const resolvedPath = resolveRustImport(usePath, filePath);
-        if (!resolvedPath && isRustStdlib(usePath)) continue;
-        const importNodeId = resolvedPath || `import::${usePath}`;
-        if (importNodeId === "import::" || importNodeId.trim() === "") continue;
+          const resolvedPath = resolveRustImport(usePath, filePath);
+          if (!resolvedPath && isRustStdlib(usePath)) continue;
+          const importNodeId = resolvedPath || `import::${usePath.split("::")[0] || usePath}`;
+          if (importNodeId === "import::" || importNodeId.trim() === "") continue;
 
-        if (!graph.hasNode(importNodeId)) {
-          const nearestDescriptor = findNearestRustDescriptor(path.dirname(filePath));
-          graph.addNode(importNodeId, {
-            type: "file",
-            name: resolvedPath ? path.basename(resolvedPath) : usePath,
-            file: resolvedPath || nearestDescriptor || filePath,
-            startLine: 0,
-            metadata: resolvedPath ? {} : { external: true }
-          });
-        }
+          if (!graph.hasNode(importNodeId)) {
+            const nearestDescriptor = findNearestRustDescriptor(path.dirname(filePath));
+            graph.addNode(importNodeId, {
+              type: "file",
+              name: resolvedPath ? path.basename(resolvedPath) : (usePath.split("::")[0] || usePath),
+              file: resolvedPath || nearestDescriptor || filePath,
+              startLine: 0,
+              metadata: resolvedPath ? {} : { external: true }
+            });
+          }
 
-        if (!graph.hasEdge(filePath, importNodeId)) {
-          graph.addEdge(filePath, importNodeId, { type: "imports", confidence: "EXTRACTED" });
+          if (!graph.hasEdge(filePath, importNodeId)) {
+            graph.addEdge(filePath, importNodeId, { type: "imports", confidence: "EXTRACTED" });
+          }
         }
       }
 
       else if (captureName === "call_name" || captureName === "macro_name") {
         const calledName = node.text.trim();
         if (!calledName || RUST_BUILT_INS.has(calledName)) continue;
+        if (isLocalDeclaration(node, calledName)) continue;
 
         const callerScope = getEnclosingScopePath(node.parent);
         const callerId = callerScope ? `${filePath}::${callerScope}` : filePath;
@@ -419,8 +595,9 @@ export function parseRust(
         if (importSource) {
           const resolvedSource = resolveRustImport(importSource, filePath);
           const targetBase = resolvedSource || `import::${importSource}`;
+          const originalName = importOriginalNameMap.get(calledName) || calledName;
           targets.push({
-            id: `${targetBase}::${calledName}`,
+            id: `${targetBase}::${originalName}`,
             confidence: "EXTRACTED"
           });
         } else if (localDefinitions.has(calledName)) {
@@ -508,10 +685,11 @@ export function parseRust(
         let objectName = "";
         if (node.parent && node.parent.type === "field_expression") {
           const valueNode = node.parent.childForFieldName("value");
-          if (valueNode) objectName = valueNode.text.trim();
+          if (valueNode) objectName = getRootIdentifier(valueNode);
         }
 
         if (objectName && RUST_STDLIB_CRATES.has(objectName)) continue;
+        if (isLocalDeclaration(node, objectName || methodName)) continue;
 
         const callerScope = getEnclosingScopePath(node.parent);
         const callerId = callerScope ? `${filePath}::${callerScope}` : filePath;
@@ -594,6 +772,7 @@ export function parseRust(
         }
 
         if (pathPrefix && RUST_STDLIB_CRATES.has(pathPrefix)) continue;
+        if (isLocalDeclaration(node, pathPrefix || calledName)) continue;
 
         const callerScope = getEnclosingScopePath(node.parent);
         const callerId = callerScope ? `${filePath}::${callerScope}` : filePath;
@@ -678,6 +857,7 @@ export function parseRust(
 
         const referencedTypeName = node.text.trim();
         if (!referencedTypeName || RUST_BUILT_INS.has(referencedTypeName)) continue;
+        if (isLocalDeclaration(node, referencedTypeName)) continue;
 
         const callerScope = getEnclosingScopePath(node.parent);
         const callerId = callerScope ? `${filePath}::${callerScope}` : filePath;
@@ -690,7 +870,8 @@ export function parseRust(
         } else if (importSource) {
           const resolvedSource = resolveRustImport(importSource, filePath);
           if (!resolvedSource && isRustStdlib(importSource)) continue;
-          targetId = `${resolvedSource || `import::${importSource}`}::${referencedTypeName}`;
+          const originalName = importOriginalNameMap.get(referencedTypeName) || referencedTypeName;
+          targetId = `${resolvedSource || `import::${importSource}`}::${originalName}`;
         } else {
           targetId = `unresolved::${referencedTypeName}`;
         }

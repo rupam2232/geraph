@@ -7,6 +7,7 @@ import {
   NodeType,
   EdgeType,
   ConfidenceType,
+  createKnowledgeGraph,
 } from "./graph.js";
 
 export interface QueryResultNode {
@@ -62,7 +63,7 @@ export function loadGraph(
   }
 
   const rawData = JSON.parse(fs.readFileSync(graphPath, "utf-8"));
-  const graph = new MultiDirectedGraph<NodeData, EdgeData>();
+  const graph = createKnowledgeGraph();
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const nodes = (rawData.nodes || []) as Array<Record<string, any>>;
@@ -104,6 +105,7 @@ export function loadGraph(
   edges.forEach((e) => {
     const source = normalizeId(e.source);
     const target = normalizeId(e.target);
+    if (source === target) return;
     if (graph.hasNode(source) && graph.hasNode(target)) {
       graph.addEdge(source, target, {
         type: (e.relation || e.type) as EdgeType,

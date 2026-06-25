@@ -49,7 +49,36 @@ export interface EdgeData {
  * We allow "multi" edges because two nodes might have multiple relationships.
  */
 export function createKnowledgeGraph(): MultiDirectedGraph<NodeData, EdgeData> {
-  return new MultiDirectedGraph<NodeData, EdgeData>();
+  const graph = new MultiDirectedGraph<NodeData, EdgeData>();
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const g = graph as any;
+
+  const originalAddEdge = graph.addEdge.bind(graph);
+  g.addEdge = (source: string, target: string, attributes?: EdgeData): string => {
+    if (source === target) return "";
+    return originalAddEdge(source, target, attributes);
+  };
+
+  const originalAddEdgeWithKey = graph.addEdgeWithKey.bind(graph);
+  g.addEdgeWithKey = (key: string, source: string, target: string, attributes?: EdgeData): string => {
+    if (source === target) return "";
+    return originalAddEdgeWithKey(key, source, target, attributes);
+  };
+
+  const originalMergeEdge = graph.mergeEdge.bind(graph);
+  g.mergeEdge = (source: string, target: string, attributes?: EdgeData) => {
+    if (source === target) return ["", false];
+    return originalMergeEdge(source, target, attributes);
+  };
+
+  const originalMergeEdgeWithKey = graph.mergeEdgeWithKey.bind(graph);
+  g.mergeEdgeWithKey = (key: string, source: string, target: string, attributes?: EdgeData) => {
+    if (source === target) return ["", false];
+    return originalMergeEdgeWithKey(key, source, target, attributes);
+  };
+
+  return graph;
 }
 
 /**
@@ -123,6 +152,7 @@ export function resolveCallGraph(
       for (const edgeId of graph.inEdges(ghostId)) {
         const src = graph.source(edgeId);
         const edgeData = graph.getEdgeAttributes(edgeId);
+        if (src === realId) continue;
         if (!graph.hasEdge(src, realId)) {
           graph.addEdge(src, realId, edgeData);
         }

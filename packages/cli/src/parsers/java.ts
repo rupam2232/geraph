@@ -186,6 +186,78 @@ function readSourceFile(filePath: string): string {
   return content.replace(/\0/g, "");
 }
 
+function isLocalDeclaration(startNode: Parser.SyntaxNode | null | undefined, name: string): boolean {
+  let current = startNode;
+  const checkPattern = (patternNode: Parser.SyntaxNode): boolean => {
+    if (patternNode.type === "identifier") {
+      return patternNode.text.trim() === name;
+    }
+    for (let i = 0; i < patternNode.namedChildCount; i++) {
+      const child = patternNode.namedChild(i);
+      if (child && checkPattern(child)) return true;
+    }
+    return false;
+  };
+
+  while (current) {
+    if (
+      current.type === "method_declaration" ||
+      current.type === "constructor_declaration" ||
+      current.type === "lambda_expression"
+    ) {
+      const params = current.childForFieldName("parameters") || current.namedChildren.find(c => c.type === "formal_parameters");
+      if (params && checkPattern(params)) return true;
+    }
+
+    if (current.type === "catch_clause") {
+      const param = current.childForFieldName("parameter") || current.namedChildren.find(c => c.type === "catch_formal_parameter");
+      if (param && checkPattern(param)) return true;
+    }
+
+    if (current.type === "for_statement" || current.type === "enhanced_for_statement") {
+      const findLoopVars = (n: Parser.SyntaxNode): boolean => {
+        if (n.type === "local_variable_declaration" || n.type === "variable_declarator") {
+          const nameNode = n.childForFieldName("name") || n.namedChild(0);
+          if (nameNode && checkPattern(nameNode)) return true;
+        }
+        for (let i = 0; i < n.namedChildCount; i++) {
+          const child = n.namedChild(i);
+          if (child && findLoopVars(child)) return true;
+        }
+        return false;
+      };
+      if (findLoopVars(current)) return true;
+    }
+
+    if (current.type === "block") {
+      for (let i = 0; i < current.namedChildCount; i++) {
+        const statement = current.namedChild(i);
+        if (!statement) continue;
+
+        if (statement.type === "local_variable_declaration") {
+          const findVars = (n: Parser.SyntaxNode): boolean => {
+            if (n.type === "variable_declarator") {
+              const nameNode = n.childForFieldName("name") || n.namedChild(0);
+              if (nameNode && checkPattern(nameNode)) return true;
+            }
+            for (let j = 0; j < n.namedChildCount; j++) {
+              const child = n.namedChild(j);
+              if (child && findVars(child)) return true;
+            }
+            return false;
+          };
+          if (findVars(statement)) {
+            if (statement.startIndex <= (startNode?.startIndex ?? 0)) return true;
+          }
+        }
+      }
+    }
+
+    current = current.parent;
+  }
+  return false;
+}
+
 export function parseJava(
   filePath: string,
   graph: MultiDirectedGraph<NodeData, EdgeData>,
@@ -374,6 +446,7 @@ export function parseJava(
       else if (captureName === "bare_method_call" || captureName === "constructor_call") {
         const calledName = node.text.trim();
         if (!calledName || JAVA_BUILT_INS.has(calledName)) continue;
+        if (isLocalDeclaration(node, calledName)) continue;
 
         const callerScope = getEnclosingScopePath(node.parent);
         const callerId = callerScope ? `${filePath}::${callerScope}` : filePath;
@@ -446,6 +519,7 @@ export function parseJava(
         }
 
         if (objectName && JAVA_STDLIB_PACKAGES.has(objectName)) continue;
+        if (isLocalDeclaration(node, objectName || methodName)) continue;
 
         const callerScope = getEnclosingScopePath(node.parent);
         const callerId = callerScope ? `${filePath}::${callerScope}` : filePath;
@@ -521,6 +595,7 @@ export function parseJava(
       else if (captureName === "type_reference") {
         const referencedTypeName = node.text.trim();
         if (!referencedTypeName || JAVA_BUILT_INS.has(referencedTypeName)) continue;
+        if (isLocalDeclaration(node, referencedTypeName)) continue;
 
         const callerScope = getEnclosingScopePath(node.parent);
         const callerId = callerScope ? `${filePath}::${callerScope}` : filePath;

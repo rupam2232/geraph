@@ -1,6 +1,5 @@
 import { parentPort } from "worker_threads";
-import { MultiDirectedGraph } from "graphology";
-import { NodeData, EdgeData } from "./graph.js";
+import { EdgeData, createKnowledgeGraph } from "./graph.js";
 import { WorkerMessage, WorkerNode, WorkerEdge, WorkerTask } from "./types.js";
 import path from "path";
 import fs from "fs";
@@ -248,10 +247,11 @@ parentPort?.on("message", async (msg: WorkerTask) => {
     return;
   }
 
-  const localGraph = new MultiDirectedGraph<NodeData, EdgeData>();
+  const localGraph = createKnowledgeGraph();
 
   const originalAddEdge = localGraph.addEdge.bind(localGraph);
   localGraph.addEdge = (source: string, target: string, attr?: EdgeData): string => {
+    if (source === target) return "";
     if (!localGraph.hasNode(source)) {
       let fileAttr = filePath;
       let nameAttr = source;

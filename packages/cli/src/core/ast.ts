@@ -223,6 +223,7 @@ export async function extractAst(
     });
 
     res.edges?.forEach((e) => {
+      if (e.source === e.target) return;
       if (!graph.hasEdge(e.source, e.target)) {
         graph.addEdge(e.source, e.target, e.attr);
       }

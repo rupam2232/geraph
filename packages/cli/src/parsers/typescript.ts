@@ -9,18 +9,62 @@ import { NodeData, EdgeData, NodeType } from "../core/graph.js";
 
 const NODE_CORE_MODULES = new Set(builtinModules);
 
-const BUILT_INS = new Set([
-  "map", "filter", "reduce", "reduceRight", "forEach", "flat", "flatMap", "find", "findIndex", "findLast", "some", "every", "sort", "reverse", "includes", "indexOf", "lastIndexOf", "push", "pop", "shift", "unshift", "splice", "slice", "fill", "copyWithin", "at",
-  "hasOwnProperty", "toString", "valueOf", "isPrototypeOf", "propertyIsEnumerable", "toLocaleString",
-  "assign", "create", "freeze", "seal", "keys", "values", "entries", "getOwnPropertyNames", "getOwnPropertyDescriptor", "getPrototypeOf", "defineProperty",
-  "has", "get", "set", "add", "delete", "clear",
-  "split", "replace", "replaceAll", "match", "matchAll", "search", "substring", "substr", "trim", "trimStart", "trimEnd", "charAt", "charCodeAt", "codePointAt", "concat", "repeat", "normalize", "startsWith", "endsWith", "padStart", "padEnd", "toLowerCase", "toUpperCase", "toLocaleLowerCase", "toLocaleUpperCase", "exec", "test",
-  "join", "getDate", "getDay", "getFullYear", "getHours", "getMilliseconds", "getMinutes", "getMonth", "getSeconds", "getTime", "getTimezoneOffset", "getUTCDate", "getUTCDay", "getUTCFullYear", "getUTCHours", "getUTCMilliseconds", "getUTCMinutes", "getUTCMonth", "getUTCSeconds", "setDate", "setFullYear", "setHours", "setMilliseconds", "setMinutes", "setMonth", "setSeconds", "setTime", "setUTCDate", "setUTCFullYear", "setUTCHours", "setUTCMilliseconds", "setUTCMinutes", "setUTCMonth", "setUTCSeconds", "toISOString", "toJSON", "toDateString", "toTimeString", "toUTCString", "toLocaleDateString", "toLocaleTimeString",
-  "then", "catch", "finally", "from", "of", "fromEntries", "fromCharCode", "fromCodePoint", "parseInt", "parseFloat", "isNaN", "isFinite", "isInteger", "isSafeInteger", "toFixed", "toPrecision", "toExponential", "call", "apply", "bind", "next", "cwd", "exit", "chdir", "memoryUsage", "hrtime", "nextTick", "uptime", "cpuUsage", "resourceUsage", "send", "abort", "on", "off", "emit", "once", "removeListener", "removeAllListeners", "addListener", "listeners", "listenerCount", "eventNames", "prependListener", "construct", "ownKeys", "for", "keyFor", "format", "formatToParts", "resolvedOptions", "supportedLocalesOf",
-  "Partial", "Required", "Readonly", "Record", "Pick", "Omit", "Exclude", "Extract", "NonNullable", "Parameters", "ConstructorParameters", "ReturnType", "InstanceType", "ThisParameterType", "OmitThisParameter", "ThisType", "Awaited", "String", "Number", "Boolean", "Symbol", "Object", "Array", "Promise", "Date", "Error", "RegExp", "URL", "URLSearchParams", "Headers", "Request", "Response",
-  "JSON", "Math", "console", "process", "Buffer", "resolve", "reject", "fetch", "setTimeout", "setInterval", "clearTimeout", "clearInterval",
-  "postMessage", "terminate", "info", "warn", "error", "debug", "succeed", "fail", "start", "stop", "command", "option", "action", "description", "parse", "version"
-]);
+const BUILT_INS = new Set<string>();
+
+// 1. Gather all core JS engine globals dynamically
+Object.getOwnPropertyNames(globalThis).forEach(p => BUILT_INS.add(p));
+
+// 2. Gather static and instance prototype methods from core JS classes
+const CORE_CLASSES: unknown[] = [
+  Object, Array, String, Number, Boolean, Symbol, Promise, Date, RegExp, Map, Set,
+  Error, ArrayBuffer, DataView, Function
+];
+if (typeof Intl !== "undefined") {
+  CORE_CLASSES.push(Intl);
+}
+for (const cls of CORE_CLASSES) {
+  if (cls && (typeof cls === "function" || typeof cls === "object")) {
+    Object.getOwnPropertyNames(cls).forEach(p => BUILT_INS.add(p));
+    const proto = (cls as { prototype?: unknown }).prototype;
+    if (proto && (typeof proto === "object" || typeof proto === "function")) {
+      Object.getOwnPropertyNames(proto).forEach(p => BUILT_INS.add(p));
+    }
+  }
+}
+
+// 3. Static set of common browser/DOM environment globals, types, and methods
+const BROWSER_DOM_BUILT_INS = [
+  // Browser Globals
+  "window", "document", "navigator", "location", "history", "screen",
+  "localStorage", "sessionStorage", "fetch", "Headers", "Request", "Response",
+  "setTimeout", "clearTimeout", "setInterval", "clearInterval",
+  "requestAnimationFrame", "cancelAnimationFrame", "alert", "confirm", "prompt",
+  
+  // DOM & HTML Interfaces/Types
+  "Event", "CustomEvent", "Node", "Element", "HTMLElement", "CSSProperties",
+  "HTMLDivElement", "HTMLSpanElement", "HTMLInputElement", "HTMLButtonElement",
+  "HTMLCanvasElement", "HTMLVideoElement", "HTMLAudioElement", "HTMLImageElement",
+  "HTMLAnchorElement", "HTMLFormElement", "SVGElement", "Blob", "File", "FileList",
+  "FileReader", "FormData", "Audio", "AudioContext", "webkitAudioContext",
+  "BroadcastChannel", "IntersectionObserver", "ResizeObserver", "MutationObserver",
+  "Timeout", "CanvasTextBaseline",
+  
+  // Common DOM Methods & Properties
+  "closest", "blur", "focus", "click", "select", "querySelector", "querySelectorAll",
+  "getElementById", "getElementsByClassName", "getElementsByTagName", "createElement",
+  "appendChild", "removeChild", "replaceChild", "insertBefore", "cloneNode", "contains",
+  "getAttribute", "setAttribute", "removeAttribute", "classList", "addEventListener",
+  "removeEventListener", "dispatchEvent", "preventDefault", "stopPropagation",
+  "getBoundingClientRect", "postMessage"
+];
+BROWSER_DOM_BUILT_INS.forEach(p => BUILT_INS.add(p));
+
+const TYPESCRIPT_UTILITY_TYPES = [
+  "Partial", "Required", "Readonly", "Record", "Pick", "Omit", "Exclude", "Extract",
+  "NonNullable", "Parameters", "ConstructorParameters", "ReturnType", "InstanceType",
+  "ThisParameterType", "OmitThisParameter", "ThisType", "Awaited", "NodeJS"
+];
+TYPESCRIPT_UTILITY_TYPES.forEach(p => BUILT_INS.add(p));
 
 function findNearestPackageJson(dir: string): string {
   let current = dir;
@@ -114,6 +158,82 @@ function readSourceFile(filePath: string): string {
   return content.replace(/\0/g, "");
 }
 
+function isLocalDeclaration(startNode: Parser.SyntaxNode | null | undefined, name: string): boolean {
+  let current = startNode;
+  const checkPattern = (patternNode: Parser.SyntaxNode): boolean => {
+    if (
+      patternNode.type === "identifier" ||
+      patternNode.type === "shorthand_property_identifier" ||
+      patternNode.type === "shorthand_property_identifier_pattern" ||
+      patternNode.type === "type_identifier"
+    ) {
+      return patternNode.text.trim() === name;
+    }
+    for (let i = 0; i < patternNode.namedChildCount; i++) {
+      const child = patternNode.namedChild(i);
+      if (child && checkPattern(child)) return true;
+    }
+    return false;
+  };
+
+  while (current) {
+    if (
+      current.type === "function_declaration" ||
+      current.type === "arrow_function" ||
+      current.type === "function_expression" ||
+      current.type === "method_definition" ||
+      current.type === "class_declaration" ||
+      current.type === "abstract_class_declaration" ||
+      current.type === "interface_declaration" ||
+      current.type === "type_alias_declaration"
+    ) {
+      const paramsNode = current.childForFieldName("parameters") || current.namedChildren.find(c => c.type === "formal_parameters" || c.type === "parameter_list");
+      if (paramsNode && checkPattern(paramsNode)) {
+        return true;
+      }
+      if (current.type === "arrow_function") {
+        const firstChild = current.namedChild(0);
+        if (firstChild && firstChild.type === "identifier" && firstChild.text.trim() === name) {
+          return true;
+        }
+      }
+      const typeParamsNode = current.childForFieldName("type_parameters") || current.namedChildren.find(c => c.type === "type_parameters");
+      if (typeParamsNode && checkPattern(typeParamsNode)) {
+        return true;
+      }
+    }
+
+    if (current.type === "mapped_type_clause") {
+      const typeParamsNode = current.childForFieldName("parameter") || current.namedChildren.find(c => c.type === "type_identifier");
+      if (typeParamsNode && typeParamsNode.text.trim() === name) {
+        return true;
+      }
+    }
+
+    if (current.type === "statement_block" || current.type === "program") {
+      for (let i = 0; i < current.namedChildCount; i++) {
+        const statement = current.namedChild(i);
+        if (!statement) continue;
+
+        if (statement.type === "lexical_declaration" || statement.type === "variable_declaration") {
+          for (let j = 0; j < statement.namedChildCount; j++) {
+            const declarator = statement.namedChild(j);
+            if (declarator && declarator.type === "variable_declarator") {
+              const nameNode = declarator.childForFieldName("name");
+              if (nameNode && checkPattern(nameNode)) {
+                return true;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    current = current.parent;
+  }
+  return false;
+}
+
 export function parseTypeScript(
   filePath: string,
   graph: MultiDirectedGraph<NodeData, EdgeData>,
@@ -152,12 +272,14 @@ export function parseTypeScript(
   if (!tree) return;
 
   const importMap = new Map<string, string>();
+  const importOriginalNameMap = new Map<string, string>();
   const localDefinitions = new Set<string>(); 
   const localMethodMap = new Map<string, string[]>();
 
   const baseQueryString = `
     (import_statement (import_clause (identifier) @default_import) source: (string) @import_source)
-    (import_statement (import_clause (named_imports (import_specifier name: (identifier) @named_import))) source: (string) @import_source)
+    (import_statement (import_clause (namespace_import (identifier) @namespace_import)) source: (string) @import_source)
+    (import_statement (import_clause (named_imports (import_specifier) @named_import_specifier)) source: (string) @import_source)
     (import_statement source: (string) @import_source)
     (import) @import_source
     
@@ -193,7 +315,10 @@ export function parseTypeScript(
         property: (property_identifier) @call_method_name
       )
     )
-    (new_expression constructor: (_) @constructor_name)
+    (new_expression constructor: [
+      (identifier)
+      (member_expression)
+    ] @constructor_name)
   `;
 
   const query = language.query(baseQueryString);
@@ -283,8 +408,19 @@ export function parseTypeScript(
     }
     if (currentSource) {
       for (const capture of match.captures) {
-        if (capture.name === "default_import" || capture.name === "named_import") {
-          importMap.set(capture.node.text, currentSource);
+        if (capture.name === "default_import" || capture.name === "namespace_import") {
+          importMap.set(capture.node.text.trim(), currentSource);
+        } else if (capture.name === "named_import_specifier") {
+          const aliasNode = capture.node.childForFieldName("alias");
+          const nameNode = capture.node.childForFieldName("name");
+          const localName = aliasNode ? aliasNode.text.trim() : (nameNode ? nameNode.text.trim() : "");
+          const originalName = nameNode ? nameNode.text.trim() : "";
+          if (localName) {
+            importMap.set(localName, currentSource);
+            if (originalName && originalName !== localName) {
+              importOriginalNameMap.set(localName, originalName);
+            }
+          }
         }
       }
     }
@@ -312,12 +448,20 @@ export function parseTypeScript(
 
   const getRootIdentifier = (node: Node | null): string => {
     if (!node) return "";
-    if (node.type === "identifier") return node.text.trim();
+    if (node.type === "identifier" || node.type === "this") return node.text.trim();
     if (node.type === "member_expression") {
       return getRootIdentifier(node.childForFieldName("object"));
     }
     if (node.type === "call_expression") {
       return getRootIdentifier(node.childForFieldName("function"));
+    }
+    if (
+      node.type === "await_expression" ||
+      node.type === "parenthesized_expression" ||
+      node.type === "non_null_expression" ||
+      node.type === "as_expression"
+    ) {
+      return getRootIdentifier(node.namedChild(0));
     }
     return "";
   };
@@ -451,9 +595,11 @@ export function parseTypeScript(
           }
         }
         
-        if (BUILT_INS.has(referencedTypeName) && !localDefinitions.has(referencedTypeName) && !importMap.has(referencedTypeName) && !moduleName) continue;
+        if (BUILT_INS.has(referencedTypeName) && !localDefinitions.has(referencedTypeName) && !importMap.has(referencedTypeName) && (!moduleName || BUILT_INS.has(moduleName))) continue;
         
         if (["interface_declaration", "type_alias_declaration", "import_specifier", "class_declaration", "function_declaration", "variable_declarator"].includes(node.parent?.type || "")) continue;
+
+        if (isLocalDeclaration(node, referencedTypeName)) continue;
 
         const callerScope = getEnclosingScopePath(node.parent);
         const callerId = callerScope ? `${filePath}::${callerScope}` : filePath;
@@ -463,16 +609,19 @@ export function parseTypeScript(
         if (isCoreModule) continue;
 
         let targetId: string;
-        if (localDefinitions.has(referencedTypeName)) {
-          targetId = `${filePath}::${referencedTypeName}`;
-        } else if (importSource) {
+        if (importSource) {
           const resolvedSource = resolveImportToNode(importSource, filePath, aliases) || importSource;
-          targetId = `${resolvedSource}::${referencedTypeName}`;
+          const originalName = importOriginalNameMap.get(moduleName || referencedTypeName) || referencedTypeName;
+          targetId = `${resolvedSource}::${originalName}`;
+        } else if (localDefinitions.has(referencedTypeName)) {
+          targetId = `${filePath}::${referencedTypeName}`;
         } else {
           targetId = `unresolved::${referencedTypeName}`;
         }
 
         const isUnresolved = !importSource && !localDefinitions.has(referencedTypeName);
+
+        if (callerId === targetId) continue;
 
         if (!graph.hasNode(targetId)) {
           graph.addNode(targetId, {
@@ -534,8 +683,10 @@ export function parseTypeScript(
           }
         }
 
-        const baseName = objectName || calledName;
+        const baseName = objectName || calledName.split(".")[0] || "";
         if (BUILT_INS.has(baseName) && !localDefinitions.has(baseName) && !importMap.has(baseName)) continue;
+
+        if (isLocalDeclaration(node, objectName || calledName)) continue;
 
         const callerScope = getEnclosingScopePath(node.parent);
         const callerId = callerScope ? `${filePath}::${callerScope}` : filePath;
@@ -602,8 +753,9 @@ export function parseTypeScript(
             if (isCoreModule) continue;
 
             const resolvedSource = resolveImportToNode(importSource, filePath, aliases) || importSource;
+            const originalName = importOriginalNameMap.get(calledName) || calledName;
             targets.push({
-              id: `${resolvedSource}::${calledName}`,
+              id: `${resolvedSource}::${originalName}`,
               confidence: "EXTRACTED"
             });
           } else if (localDefinitions.has(calledName)) {

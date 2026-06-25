@@ -150,6 +150,87 @@ function extractDocstring(node: Node): string | undefined {
   return undefined;
 }
 
+function isLocalDeclaration(startNode: Parser.SyntaxNode | null | undefined, name: string): boolean {
+  let current = startNode;
+  const checkPattern = (patternNode: Parser.SyntaxNode): boolean => {
+    if (patternNode.type === "identifier") {
+      return patternNode.text.trim() === name;
+    }
+    if (patternNode.type === "attribute") {
+      return false;
+    }
+    for (let i = 0; i < patternNode.namedChildCount; i++) {
+      const child = patternNode.namedChild(i);
+      if (child && checkPattern(child)) return true;
+    }
+    return false;
+  };
+
+  while (current) {
+    if (
+      current.type === "function_definition" ||
+      current.type === "lambda"
+    ) {
+      const paramsNode = current.childForFieldName("parameters") || current.namedChild(0);
+      if (paramsNode && checkPattern(paramsNode)) {
+        return true;
+      }
+    }
+
+    if (current.type === "for_statement") {
+      const leftNode = current.childForFieldName("left") || current.namedChild(0);
+      if (leftNode && checkPattern(leftNode)) {
+        return true;
+      }
+    }
+
+    if (current.type === "with_statement") {
+      const findAsPatternTarget = (n: Parser.SyntaxNode): boolean => {
+        if (n.type === "as_pattern_target") {
+          return checkPattern(n);
+        }
+        for (let i = 0; i < n.namedChildCount; i++) {
+          const child = n.namedChild(i);
+          if (child && findAsPatternTarget(child)) return true;
+        }
+        return false;
+      };
+      if (findAsPatternTarget(current)) {
+        return true;
+      }
+    }
+
+    if (current.type === "block") {
+      for (let i = 0; i < current.namedChildCount; i++) {
+        const statement = current.namedChild(i);
+        if (!statement) continue;
+
+        let assignNode: Parser.SyntaxNode | null = null;
+        if (statement.type === "assignment") {
+          assignNode = statement;
+        } else if (statement.type === "expression_statement") {
+          const firstChild = statement.namedChild(0);
+          if (firstChild && firstChild.type === "assignment") {
+            assignNode = firstChild;
+          }
+        }
+
+        if (assignNode) {
+          const leftNode = assignNode.childForFieldName("left") || assignNode.namedChild(0);
+          if (leftNode && checkPattern(leftNode)) {
+            if (statement.startIndex <= (startNode?.startIndex ?? 0)) {
+              return true;
+            }
+          }
+        }
+      }
+    }
+
+    current = current.parent;
+  }
+  return false;
+}
+
 function readSourceFile(filePath: string): string {
   const buffer = fs.readFileSync(filePath);
   if (buffer.length >= 2 && buffer[0] === 0xFF && buffer[1] === 0xFE) {
@@ -194,12 +275,48 @@ export function parsePython(
 
   const localDefinitions = new Set<string>();
   const importMap = new Map<string, string>(); // importedSymbol -> importSource
+  const importOriginalNameMap = new Map<string, string>(); // localName -> originalName
   const localMethodMap = new Map<string, string[]>();
 
+  const getRootIdentifier = (node: Node | null): string => {
+    if (!node) return "";
+    if (node.type === "identifier") return node.text.trim();
+    if (node.type === "attribute") {
+      return getRootIdentifier(node.childForFieldName("object"));
+    }
+    if (node.type === "call") {
+      return getRootIdentifier(node.childForFieldName("function"));
+    }
+    if (node.type === "await" || node.type === "parenthesized_expression") {
+      const valueNode = node.namedChild(0);
+      return getRootIdentifier(valueNode);
+    }
+    return "";
+  };
+
   const queryString = `
-    (import_statement name: (dotted_name) @import_direct)
-    (import_from_statement module_name: (dotted_name) @import_from)
-    (import_from_statement module_name: (dotted_name) @import_from name: (dotted_name) @import_symbol)
+    (import_statement [
+      (dotted_name)
+      (aliased_import)
+    ] @import_direct)
+
+    (import_from_statement 
+      module_name: [
+        (dotted_name)
+        (relative_import)
+      ] @import_from
+    )
+
+    (import_from_statement 
+      module_name: [
+        (dotted_name)
+        (relative_import)
+      ]
+      name: [
+        (dotted_name)
+        (aliased_import)
+      ] @import_symbol
+    )
 
     (class_definition name: (identifier) @class_decl)
     (function_definition name: (identifier) @func_decl)
@@ -237,16 +354,43 @@ export function parsePython(
       const captureName = capture.name;
 
       if (captureName === "import_direct") {
-        const importPath = node.text.trim();
-        if (importPath && importPath !== "") {
-          importMap.set(importPath, importPath);
+        if (node.type === "dotted_name") {
+          const importPath = node.text.trim();
+          if (importPath && importPath !== "") {
+            importMap.set(importPath, importPath);
+          }
+        } else if (node.type === "aliased_import") {
+          const originalNode = node.namedChild(0);
+          const aliasNode = node.namedChild(1);
+          if (originalNode && aliasNode) {
+            const originalPath = originalNode.text.trim();
+            const alias = aliasNode.text.trim();
+            importMap.set(alias, originalPath);
+            const originalName = originalPath.split(".").pop() || originalPath;
+            if (originalName && originalName !== alias) {
+              importOriginalNameMap.set(alias, originalName);
+            }
+          }
         }
       } else if (captureName === "import_from") {
         activeImportSource = node.text.trim();
       } else if (captureName === "import_symbol" && activeImportSource) {
-        const symName = node.text.trim();
-        if (symName && symName !== "") {
-          importMap.set(symName, activeImportSource);
+        if (node.type === "dotted_name") {
+          const symName = node.text.trim();
+          if (symName && symName !== "") {
+            importMap.set(symName, activeImportSource);
+          }
+        } else if (node.type === "aliased_import") {
+          const originalNode = node.namedChild(0);
+          const aliasNode = node.namedChild(1);
+          if (originalNode && aliasNode) {
+            const originalName = originalNode.text.trim();
+            const alias = aliasNode.text.trim();
+            importMap.set(alias, activeImportSource);
+            if (originalName && originalName !== alias) {
+              importOriginalNameMap.set(alias, originalName);
+            }
+          }
         }
       } else if (captureName === "class_decl" || captureName === "func_decl") {
         const symName = node.text.trim();
@@ -310,7 +454,13 @@ export function parsePython(
       }
 
       else if (captureName === "import_direct" || captureName === "import_from") {
-        const importPath = node.text.trim();
+        let importPath = node.text.trim();
+        if (node.type === "aliased_import") {
+          const originalNode = node.namedChild(0);
+          if (originalNode) {
+            importPath = originalNode.text.trim();
+          }
+        }
         if (importPath === "" || importPath === "." || importPath === "*") continue;
 
         const resolvedPath = resolvePythonImport(importPath, filePath);
@@ -340,6 +490,7 @@ export function parsePython(
       else if (captureName === "call_name") {
         const calledName = node.text.trim();
         if (!calledName || PYTHON_BUILT_INS.has(calledName)) continue;
+        if (isLocalDeclaration(node, calledName)) continue;
 
         const importSource = importMap.get(calledName);
 
@@ -392,13 +543,15 @@ export function parsePython(
             });
           }
         } else if (resolvedImport) {
+          const originalName = importOriginalNameMap.get(calledName) || calledName;
           targets.push({
-            id: `${resolvedImport}::${calledName}`,
+            id: `${resolvedImport}::${originalName}`,
             confidence: "EXTRACTED"
           });
         } else if (importSource) {
+          const originalName = importOriginalNameMap.get(calledName) || calledName;
           targets.push({
-            id: `import::${importSource}::${calledName}`,
+            id: `import::${importSource}::${originalName}`,
             confidence: "EXTRACTED"
           });
         } else {
@@ -472,8 +625,8 @@ export function parsePython(
         let objectName = "";
         if (node.parent?.type === "attribute") {
           const objectNode = node.parent.childForFieldName("object");
-          if (objectNode && objectNode.type === "identifier") {
-            objectName = objectNode.text.trim();
+          if (objectNode) {
+            objectName = getRootIdentifier(objectNode);
           }
         }
 
@@ -481,6 +634,7 @@ export function parsePython(
         if (objectName && !resolvedObject && PYTHON_STDLIB_MODULES.has(objectName)) {
           continue;
         }
+        if (isLocalDeclaration(node, objectName || methodName)) continue;
 
         const importSource = importMap.get(objectName);
         if (importSource) {
@@ -599,6 +753,7 @@ export function parsePython(
       else if (captureName === "type_reference") {
         const referencedTypeName = node.text.trim();
         if (!referencedTypeName || PYTHON_BUILT_INS.has(referencedTypeName)) continue;
+        if (isLocalDeclaration(node, referencedTypeName)) continue;
 
         const callerScope = getEnclosingScopePath(node.parent);
         const callerId = callerScope ? `${filePath}::${callerScope}` : filePath;
@@ -612,7 +767,8 @@ export function parsePython(
           const resolvedSource = resolvePythonImport(importSource, filePath);
           const importRoot = importSource.split(".")[0] || importSource;
           if (!resolvedSource && PYTHON_STDLIB_MODULES.has(importRoot)) continue;
-          targetId = `${resolvedSource || `import::${importSource}`}::${referencedTypeName}`;
+          const originalName = importOriginalNameMap.get(referencedTypeName) || referencedTypeName;
+          targetId = `${resolvedSource || `import::${importSource}`}::${originalName}`;
         } else {
           targetId = `unresolved::${referencedTypeName}`;
         }
