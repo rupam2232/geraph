@@ -9,15 +9,7 @@ import { fileURLToPath } from "url";
 import Parser from "web-tree-sitter";
 import crypto from "crypto";
 type Language = Parser.Language;
-import { parseTypeScript } from "../parsers/typescript.js";
-import { parseJson } from "../parsers/json.js";
-import { parseMarkdown } from "../parsers/markdown.js";
-import { parseMedia } from "../parsers/media.js";
-import { parsePython } from "../parsers/python.js";
-import { parseGo } from "../parsers/go.js";
-import { parseJava } from "../parsers/java.js";
-import { parseRust } from "../parsers/rust.js";
-import { parseCpp } from "../parsers/cpp.js";
+
 
 const MEDIA_EXTS = new Set([
   "png", "jpg", "jpeg", "svg", "gif", "webp", 
@@ -304,22 +296,37 @@ parentPort?.on("message", async (msg: WorkerTask) => {
     if (ext === "ts" || ext === "js" || ext === "tsx" || ext === "jsx") {
       const aliases = getContextualAliases(filePath, aliasMap || {});
       const languages = await getPreinstalledLanguages();
+      const { parseTypeScript } = await import("../parsers/typescript.js");
       parseTypeScript(filePath, localGraph, languages, aliases);
     } else if (ext === "json") {
+      const { parseJson } = await import("../parsers/json.js");
       parseJson(filePath, localGraph);
     } else if (ext === "md") {
+      const { parseMarkdown } = await import("../parsers/markdown.js");
       parseMarkdown(filePath, localGraph);
     } else if (MEDIA_EXTS.has(ext)) {
+      const { parseMedia } = await import("../parsers/media.js");
       parseMedia(filePath, localGraph);
     } else if (POLYGLOT_LANG_MAP[ext]) {
       const langName = POLYGLOT_LANG_MAP[ext]!;
       const language = await getDynamicLanguage(langName);
       if (language) {
-        if (langName === "python") parsePython(filePath, localGraph, language);
-        else if (langName === "go") parseGo(filePath, localGraph, language);
-        else if (langName === "java") parseJava(filePath, localGraph, language);
-        else if (langName === "rust") parseRust(filePath, localGraph, language);
-        else if (langName === "cpp") parseCpp(filePath, localGraph, language);
+        if (langName === "python") {
+          const { parsePython } = await import("../parsers/python.js");
+          parsePython(filePath, localGraph, language);
+        } else if (langName === "go") {
+          const { parseGo } = await import("../parsers/go.js");
+          parseGo(filePath, localGraph, language);
+        } else if (langName === "java") {
+          const { parseJava } = await import("../parsers/java.js");
+          parseJava(filePath, localGraph, language);
+        } else if (langName === "rust") {
+          const { parseRust } = await import("../parsers/rust.js");
+          parseRust(filePath, localGraph, language);
+        } else if (langName === "cpp") {
+          const { parseCpp } = await import("../parsers/cpp.js");
+          parseCpp(filePath, localGraph, language);
+        }
       }
     } else {
       // Unknown file type is already seeded as 'file' node above

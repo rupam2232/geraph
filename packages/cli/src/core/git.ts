@@ -3,7 +3,7 @@ import path from "path";
 import fs from "fs";
 import type { MultiDirectedGraph } from "graphology";
 import type { NodeData, EdgeData } from "./graph.js";
-import chalk from "chalk";
+import pc from "picocolors";
 
 const CACHE_VERSION = "1";
 
@@ -91,7 +91,7 @@ export async function enrichWithGit(
     // Detect shallow clones (common in GitHub Actions / CI).
     const isShallow = (await git.raw(["rev-parse", "--is-shallow-repository"])).trim() === "true";
     if (isShallow) {
-      console.warn(chalk.yellow("\n\u26A0\u3000Shallow Git repository detected. Skipping Git enrichment to save time."));
+      console.warn(pc.yellow("\n\u26A0\u3000Shallow Git repository detected. Skipping Git enrichment to save time."));
       return;
     }
   } catch {
@@ -292,7 +292,7 @@ export async function enrichWithGit(
           }
         }
       } catch {
-        console.warn(chalk.yellow("\n\u26A0\u3000Warning: Failed to bulk-fetch metadata for some commits."));
+        console.warn(pc.yellow("\n\u26A0\u3000Warning: Failed to bulk-fetch metadata for some commits."));
       }
     }
   }

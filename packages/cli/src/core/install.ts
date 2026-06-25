@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import os from "os";
-import chalk from "chalk";
+import pc from "picocolors";
 
 const START_MARKER = "<!-- GERAPH_START -->";
 const END_MARKER = "<!-- GERAPH_END -->";
@@ -250,7 +250,7 @@ export async function installGeraph(
     results.push(`Global skill installed at ${platform.globalPath}`);
   } else if (!skillContent && platform.globalPath) {
     console.log(
-      chalk.red(`Failed to install global skill at ${platform.globalPath}.`),
+      pc.red(`Failed to install global skill at ${platform.globalPath}.`),
     );
   }
 

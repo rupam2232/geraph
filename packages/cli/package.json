@@ -57,15 +57,13 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "chalk": "^4.1.2",
     "commander": "^4.1.1",
     "fast-glob": "^3.3.1",
     "graphology": "^0.26.0",
     "graphology-communities-louvain": "^2.0.2",
-    "graphology-metrics": "^2.4.0",
-    "graphology-shortest-path": "^2.1.0",
     "ignore": "^5.3.2",
     "ora": "^9.4.0",
+    "picocolors": "^1.1.1",
     "simple-git": "^3.36.0",
     "web-tree-sitter": "^0.20.8"
   }
