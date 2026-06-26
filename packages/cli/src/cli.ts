@@ -87,7 +87,7 @@ program
       const outDir = path.join(targetDir, ".geraph");
       exportGraphJson(graph, outDir, analysis);
       exportReportMarkdown(graph, outDir, analysis);
-      exportGraphHtml(graph, outDir);
+      exportGraphHtml(graph, outDir, analysis);
 
       const endTime = performance.now();
       const durationSeconds = ((endTime - startTime) / 1000).toFixed(1);
