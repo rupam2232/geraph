@@ -116,7 +116,7 @@ export async function extractAst(
   }
 
   if (queue.length > 0) {
-    const numWorkers = Math.min(availableParallelism(), queue.length);
+    const numWorkers = Math.min(availableParallelism(), queue.length, 4);
     const workerPath = path.join(
       path.dirname(fileURLToPath(import.meta.url)),
       "core",

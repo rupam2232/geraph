@@ -689,7 +689,7 @@ export function parseRust(
         }
 
         if (objectName && RUST_STDLIB_CRATES.has(objectName)) continue;
-        if (isLocalDeclaration(node, objectName || methodName)) continue;
+        if (isLocalDeclaration(node, objectName ? `${objectName}.${methodName}` : methodName)) continue;
 
         const callerScope = getEnclosingScopePath(node.parent);
         const callerId = callerScope ? `${filePath}::${callerScope}` : filePath;
@@ -709,7 +709,7 @@ export function parseRust(
           if (localMatches.length === 1 && localMatches[0]) {
             targets.push({
               id: localMatches[0],
-              confidence: "EXTRACTED"
+              confidence: "INFERRED"
             });
           } else if (localMatches.length > 1) {
             for (const matchId of localMatches) {
@@ -772,7 +772,7 @@ export function parseRust(
         }
 
         if (pathPrefix && RUST_STDLIB_CRATES.has(pathPrefix)) continue;
-        if (isLocalDeclaration(node, pathPrefix || calledName)) continue;
+        if (isLocalDeclaration(node, pathPrefix ? `${pathPrefix}::${calledName}` : calledName)) continue;
 
         const callerScope = getEnclosingScopePath(node.parent);
         const callerId = callerScope ? `${filePath}::${callerScope}` : filePath;

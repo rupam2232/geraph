@@ -616,12 +616,6 @@ export async function runMcpServer(
           description: "Cross-community surprising connections",
           mimeType: "text/plain",
         },
-        {
-          uri: "geraph://audit",
-          name: "Confidence Audit",
-          description: "EXTRACTED/INFERRED/AMBIGUOUS edge breakdown",
-          mimeType: "text/plain",
-        },
       ],
     };
   });
@@ -672,34 +666,6 @@ export async function runMcpServer(
     if (uri === "geraph://surprises") {
       const { getSurprisingConnections } = await import("./query.js");
       const text = await getSurprisingConnections(graph, 1, 10);
-      return {
-        contents: [{ uri, mimeType: "text/plain", text }],
-      };
-    }
-
-    if (uri === "geraph://audit") {
-      let extractedCount = 0;
-      let inferredCount = 0;
-      let ambiguousCount = 0;
-
-      graph.forEachEdge((edgeId, attr) => {
-        if (attr.confidence === "EXTRACTED") extractedCount++;
-        else if (attr.confidence === "INFERRED") inferredCount++;
-        else if (attr.confidence === "AMBIGUOUS") ambiguousCount++;
-      });
-
-      const total = graph.size || 1;
-      const extPct = Math.round((extractedCount / total) * 100);
-      const infPct = Math.round((inferredCount / total) * 100);
-      const ambPct = Math.round((ambiguousCount / total) * 100);
-
-      const text = [
-        `Total edges: ${total}`,
-        `EXTRACTED: ${extractedCount} (${extPct}%)`,
-        `INFERRED: ${inferredCount} (${infPct}%)`,
-        `AMBIGUOUS: ${ambiguousCount} (${ambPct}%)`,
-      ].join("\n");
-
       return {
         contents: [{ uri, mimeType: "text/plain", text }],
       };

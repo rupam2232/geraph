@@ -555,7 +555,7 @@ export function parseGo(
         if (operandName && GO_STDLIB_PACKAGES.has(operandName)) {
           continue;
         }
-        if (isLocalDeclaration(node, operandName || methodName)) continue;
+        if (isLocalDeclaration(node, operandName ? `${operandName}.${methodName}` : methodName)) continue;
 
         const callerScope = getEnclosingScopePath(node.parent);
         const callerId = callerScope ? `${filePath}::${callerScope}` : filePath;
@@ -576,7 +576,7 @@ export function parseGo(
           if (localMatches.length === 1 && localMatches[0]) {
             targets.push({
               id: localMatches[0],
-              confidence: "EXTRACTED"
+              confidence: "INFERRED"
             });
           } else if (localMatches.length > 1) {
             for (const matchId of localMatches) {

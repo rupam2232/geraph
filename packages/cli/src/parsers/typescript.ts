@@ -686,7 +686,7 @@ export function parseTypeScript(
         const baseName = objectName || calledName.split(".")[0] || "";
         if (BUILT_INS.has(baseName) && !localDefinitions.has(baseName) && !importMap.has(baseName)) continue;
 
-        if (isLocalDeclaration(node, objectName || calledName)) continue;
+        if (isLocalDeclaration(node, calledName)) continue;
 
         const callerScope = getEnclosingScopePath(node.parent);
         const callerId = callerScope ? `${filePath}::${callerScope}` : filePath;
@@ -733,7 +733,7 @@ export function parseTypeScript(
             if (localMatches.length === 1 && localMatches[0]) {
               targets.push({
                 id: localMatches[0],
-                confidence: "EXTRACTED"
+                confidence: "INFERRED"
               });
             } else if (localMatches.length > 1) {
               for (const matchId of localMatches) {

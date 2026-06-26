@@ -844,9 +844,9 @@ export async function getGraphStats(
   });
   
   const total = graph.size || 1;
-  const extPct = Math.round((extractedCount / total) * 100);
-  const infPct = Math.round((inferredCount / total) * 100);
-  const ambPct = Math.round((ambiguousCount / total) * 100);
+  const extPct = ((extractedCount / total) * 100).toFixed(1);
+  const infPct = ((inferredCount / total) * 100).toFixed(1);
+  const ambPct = ((ambiguousCount / total) * 100).toFixed(1);
 
   // Get communities count
   let communitiesCount = 0;
@@ -861,8 +861,8 @@ export async function getGraphStats(
     `Nodes: ${graph.order}`,
     `Edges: ${graph.size}`,
     `Communities: ${communitiesCount}`,
-    `EXTRACTED: ${extPct}%`,
-    `INFERRED: ${infPct}%`,
-    `AMBIGUOUS: ${ambPct}%`
+    `EXTRACTED: ${extractedCount} (${extPct}%)`,
+    `INFERRED: ${inferredCount} (${infPct}%)`,
+    `AMBIGUOUS: ${ambiguousCount} (${ambPct}%)`
   ].join("\n");
 }

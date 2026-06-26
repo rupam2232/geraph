@@ -18,7 +18,7 @@ Rules:
 - NEVER try to read the massive \`.geraph/graph.json\` or the \`.geraph/graph.html\` files directly. They will overflow your context window and crash your session.
 - NEVER read any files inside the \`.geraph/cache\` directory (like \`git-cache.json\`) directly as they contain massive raw blame indexes that will overflow your context.
 - Prioritize using the native Geraph MCP tools and resources (if available) over terminal CLI commands.
-- **MCP Resources:** Access high-level statistics, reports, and god nodes directly via read-only resources: \`geraph://report\`, \`geraph://stats\`, \`geraph://god-nodes\`, \`geraph://surprises\`, and \`geraph://audit\`.
+- **MCP Resources:** Access high-level statistics, reports, and god nodes directly via read-only resources: \`geraph://report\`, \`geraph://stats\`, \`geraph://god-nodes\`, and \`geraph://surprises\`.
 - After modifying files or pushing a Git commit, you MUST run the \`scan_graph\` MCP tool or the \`geraph scan\` CLI command to sync the graph.
 - NEVER use \`grep\`, \`rg\`, or \`find\` for codebase architecture exploration when Geraph is available.
 
@@ -37,7 +37,7 @@ Rules:
 - NEVER try to read the massive \`.geraph/graph.json\` or the \`.geraph/graph.html\` files directly. They will overflow your context window.
 - NEVER read any files inside the \`.geraph/cache\` directory (like \`git-cache.json\`) directly as they contain massive raw blame indexes that will overflow your context.
 - Prioritize using the native Geraph MCP tools and resources (if available) over terminal CLI commands.
-- **MCP Resources:** Access high-level statistics, reports, and god nodes directly via read-only resources: \`geraph://report\`, \`geraph://stats\`, \`geraph://god-nodes\`, \`geraph://surprises\`, and \`geraph://audit\`.
+- **MCP Resources:** Access high-level statistics, reports, and god nodes directly via read-only resources: \`geraph://report\`, \`geraph://stats\`, \`geraph://god-nodes\`, and \`geraph://surprises\`.
 - After modifying files or pushing a Git commit, you MUST run the \`scan_graph\` MCP tool or the \`geraph scan\` CLI command to sync the graph.
 - NEVER use \`grep\`, \`rg\`, or \`find\` for codebase architecture exploration when Geraph is available.
 

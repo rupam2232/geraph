@@ -71,7 +71,6 @@ If MCP is active, you can load these read-only URIs directly as resources to qui
 * `geraph://stats` : General stats (node/edge/community counts and confidence breakdown).
 * `geraph://god-nodes` : Top 10 most-connected core abstractions.
 * `geraph://surprises` : Top 10 surprising cross-community couplings.
-* `geraph://audit` : Extraction confidence audit counts.
 
 ---
 
@@ -249,5 +248,5 @@ Triggers a full scan of the directory to rebuild the knowledge graph.
 ### Confidence Scores
 Every edge has a `confidence` level:
 * `EXTRACTED`: 100% deterministic AST parser extraction (e.g. direct function call or explicit import statement).
-* `INFERRED`: High probability structural heuristic coupling.
-* `AMBIGUOUS`: Uncertain connection that needs manual verification.
+* `INFERRED`: Heuristic structural mapping (e.g. matching a method call on a local instance variable to a unique local function definition of the same name).
+* `AMBIGUOUS`: Uncertain or unresolved connection (e.g. multiple matching local method candidates exist, or the symbol is completely unresolved).
