@@ -43,6 +43,9 @@ Before answering architecture or codebase questions, **always load the Geraph Re
 > [!IMPORTANT]
 > **Scan on Modification:** Immediately after making any code changes, creating/deleting files, or committing code, you MUST run the `scan_graph` MCP tool or the `geraph scan` CLI command to rebuild the AST graph and sync Geraph's memory with the active state of the code.
 
+> [!TIP]
+> **Use Geraph for Navigation and Structure:** Before reading a source code file, always use Geraph tools/commands (like `search_graph`, `get_node`, or `get_neighbors`) to inspect what classes, functions, or imports are inside the file and how they are connected. You MUST only read a raw file from the filesystem when you actually need to see or edit its source code implementation details.
+
 ---
 
 ## 2. Fuzzy Search & Node ID Resolution Mechanics

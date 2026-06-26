@@ -26,7 +26,7 @@ geraph scan
 - **Structural Memory**: Long-term "architectural intuition" for AI agents.
 - **Token Efficiency**: Compact 2KB reports instead of MBs of raw code.
 - **AST Precision**: Static analysis (tree-sitter) for absolute accuracy.
-- **History Aware**: Integrates Git history to explain the "Why" behind the code.
+- **History & Context Aware**: Integrates Git history and inline comments (like JSDoc or docstrings) to explain the "Why" and context behind the code.
 - **100% Local & Private**: No cloud, no telemetry, no code leaves your machine.
 
 ## MCP Server (Recommended)
