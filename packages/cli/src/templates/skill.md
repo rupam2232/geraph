@@ -43,6 +43,9 @@ Before answering architecture or codebase questions, **always load the Geraph Re
 > [!IMPORTANT]
 > **Scan on Modification:** Immediately after making any code changes, creating/deleting files, or committing code, you MUST run the `scan_graph` MCP tool or the `geraph scan` CLI command to rebuild the AST graph and sync Geraph's memory with the active state of the code.
 
+> [!TIP]
+> **Use Geraph for Navigation and Structure:** Before reading a source code file, always use Geraph tools/commands (like `search_graph`, `get_node`, or `get_neighbors`) to inspect what classes, functions, or imports are inside the file and how they are connected. You MUST only read a raw file from the filesystem when you actually need to see or edit its source code implementation details.
+
 ---
 
 ## 2. Fuzzy Search & Node ID Resolution Mechanics
@@ -71,7 +74,6 @@ If MCP is active, you can load these read-only URIs directly as resources to qui
 * `geraph://stats` : General stats (node/edge/community counts and confidence breakdown).
 * `geraph://god-nodes` : Top 10 most-connected core abstractions.
 * `geraph://surprises` : Top 10 surprising cross-community couplings.
-* `geraph://audit` : Extraction confidence audit counts.
 
 ---
 
@@ -249,5 +251,5 @@ Triggers a full scan of the directory to rebuild the knowledge graph.
 ### Confidence Scores
 Every edge has a `confidence` level:
 * `EXTRACTED`: 100% deterministic AST parser extraction (e.g. direct function call or explicit import statement).
-* `INFERRED`: High probability structural heuristic coupling.
-* `AMBIGUOUS`: Uncertain connection that needs manual verification.
+* `INFERRED`: Heuristic structural mapping (e.g. matching a method call on a local instance variable to a unique local function definition of the same name).
+* `AMBIGUOUS`: Uncertain or unresolved connection (e.g. multiple matching local method candidates exist, or the symbol is completely unresolved).

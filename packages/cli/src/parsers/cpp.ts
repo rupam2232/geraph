@@ -536,7 +536,7 @@ export function parseCpp(
           const objectNode = node.parent.childForFieldName("object");
           if (objectNode) objectName = objectNode.text.trim();
         }
-        if (isLocalDeclaration(node, objectName || methodName)) continue;
+        if (isLocalDeclaration(node, objectName ? `${objectName}.${methodName}` : methodName)) continue;
 
         const callerScope = getEnclosingScopePath(node.parent);
         const callerId = callerScope ? `${filePath}::${callerScope}` : filePath;
@@ -547,7 +547,7 @@ export function parseCpp(
         if (localMatches.length === 1 && localMatches[0]) {
           targets.push({
             id: localMatches[0],
-            confidence: "EXTRACTED"
+            confidence: "INFERRED"
           });
         } else if (localMatches.length > 1) {
           for (const matchId of localMatches) {

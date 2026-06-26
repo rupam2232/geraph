@@ -1,26 +1,14 @@
 import { Command } from "commander";
-import chalk from "chalk";
-import ora from "ora";
+import pc from "picocolors";
 import path from "path";
-import { scanDirectory } from "./core/scanner.js";
-import { extractAst } from "./core/ast.js";
-import { createKnowledgeGraph, resolveCallGraph } from "./core/graph.js";
-import { enrichWithGit } from "./core/git.js";
-import { analyzeGraph } from "./core/analyze.js";
-import {
-  exportGraphJson,
-  exportReportMarkdown,
-  exportGraphHtml,
-} from "./core/serializer.js";
-import { installGeraph, uninstallGeraph, PLATFORMS } from "./core/install.js";
 import fs from "fs";
 
 export const program = new Command();
 
 program
   .name("geraph")
-  .description(chalk.blue("Geraph: Structural memory for AI agents"))
-  .version("1.1.0", "-v, --version", "output the current version");
+  .description(pc.blue("Geraph: Structural memory for AI agents"))
+  .version("1.2.0", "-v, --version", "output the current version");
 
 program
   .command("scan")
@@ -33,8 +21,20 @@ program
     const targetDir = process.cwd();
     const force = !!options.force;
 
+    const ora = (await import("ora")).default;
+    const { scanDirectory } = await import("./core/scanner.js");
+    const { createKnowledgeGraph, resolveCallGraph } = await import("./core/graph.js");
+    const { extractAst } = await import("./core/ast.js");
+    const { enrichWithGit } = await import("./core/git.js");
+    const { analyzeGraph } = await import("./core/analyze.js");
+    const {
+      exportGraphJson,
+      exportReportMarkdown,
+      exportGraphHtml,
+    } = await import("./core/serializer.js");
+
     const spinner = ora({
-      text: chalk.gray(`Scanning codebase in ${targetDir}...`),
+      text: pc.gray(`Scanning codebase in ${targetDir}...`),
       color: "cyan",
       spinner: "dots",
     }).start();
@@ -46,7 +46,7 @@ program
       const files = await scanDirectory(targetDir);
 
       // Initialize Knowledge Graph
-      spinner.text = chalk.gray("Initializing Knowledge Graph...");
+      spinner.text = pc.gray("Initializing Knowledge Graph...");
       const graph = createKnowledgeGraph();
 
       // Seed the graph with file nodes
@@ -67,50 +67,50 @@ program
       // AST Parsing
       await extractAst(files, graph, targetDir, spinner, force);
 
-      spinner.text = chalk.gray("Resolving call graph...");
+      spinner.text = pc.gray("Resolving call graph...");
       // Merges unresolved_fn ghost nodes into real defined functions,
       // eliminating duplicates caused by cross-file call references.
       resolveCallGraph(graph);
 
       // Temporal Fact Management (Git History)
-      spinner.text = chalk.gray(
+      spinner.text = pc.gray(
         "Extracting Temporal Facts from Git history...",
       );
       await enrichWithGit(graph, targetDir, force);
 
       // Graph Analysis
-      spinner.text = chalk.gray("Analyzing graph structure...");
+      spinner.text = pc.gray("Analyzing graph structure...");
       const analysis = analyzeGraph(graph);
 
       // Caveman Mode & Serialization
-      spinner.text = chalk.gray("Compressing graph into Caveman Mode...");
+      spinner.text = pc.gray("Compressing graph into Caveman Mode...");
       const outDir = path.join(targetDir, ".geraph");
       exportGraphJson(graph, outDir, analysis);
       exportReportMarkdown(graph, outDir, analysis);
-      exportGraphHtml(graph, outDir);
+      exportGraphHtml(graph, outDir, analysis);
 
       const endTime = performance.now();
       const durationSeconds = ((endTime - startTime) / 1000).toFixed(1);
 
       spinner.succeed(
-        chalk.green(
+        pc.green(
           `Successfully scanned and parsed ${files.length} target files.`,
         ),
       );
 
       console.log();
-      console.log(chalk.bold("Graph Stats:"));
-      console.log(chalk.dim(`  - Nodes: ${graph.order}`));
-      console.log(chalk.dim(`  - Edges: ${graph.size}`));
-      console.log(chalk.dim(`  - Communities: ${analysis.communities.length}`));
-      console.log(chalk.dim(`  - Time:  ${durationSeconds}s`));
+      console.log(pc.bold("Graph Stats:"));
+      console.log(pc.dim(`  - Nodes: ${graph.order}`));
+      console.log(pc.dim(`  - Edges: ${graph.size}`));
+      console.log(pc.dim(`  - Communities: ${analysis.communities.length}`));
+      console.log(pc.dim(`  - Time:  ${durationSeconds}s`));
       console.log();
-      console.log(chalk.cyan(`Type '/geraph' in your AI chat to begin.`));
+      console.log(pc.cyan(`Type '/geraph' in your AI chat to begin.`));
       console.log(); // Blank line for padding
     } catch (error) {
-      spinner.fail(chalk.red("Failed to scan directory."));
+      spinner.fail(pc.red("Failed to scan directory."));
       if (error instanceof Error) {
-        console.error(chalk.red(`Error: ${error.message}`));
+        console.error(pc.red(`Error: ${error.message}`));
       }
       process.exit(1);
     }
@@ -128,13 +128,16 @@ program
     // If no platforms provided, default to 'agents'
     const targets = platforms.length > 0 ? platforms : ["agents"];
 
+    const ora = (await import("ora")).default;
+    const { installGeraph, PLATFORMS } = await import("./core/install.js");
+
     for (const pName of targets) {
       if (!PLATFORMS[pName]) {
         console.log(
-          chalk.yellow(`\n\u26A0\u3000Platform '${pName}' is not supported.`),
+          pc.yellow(`\n\u26A0\u3000Platform '${pName}' is not supported.`),
         );
         console.log(
-          chalk.gray(
+          pc.gray(
             `   Run 'geraph install' to install the default AGENTS.md for basic LLM support.\n`,
           ),
         );
@@ -142,22 +145,22 @@ program
       }
 
       const spinner = ora({
-        text: chalk.gray(`Installing Geraph rules for ${pName}...`),
+        text: pc.gray(`Installing Geraph rules for ${pName}...`),
         color: "blue",
         spinner: "dots",
       }).start();
 
       try {
         const platformResults = await installGeraph(targetDir, pName);
-        spinner.succeed(chalk.green(`Installed Geraph rules for ${pName}.`));
+        spinner.succeed(pc.green(`Installed Geraph rules for ${pName}.`));
         console.log();
-        platformResults.forEach((r) => console.log(chalk.dim(`  - ${r}`)));
+        platformResults.forEach((r) => console.log(pc.dim(`  - ${r}`)));
         console.log();
         results.push(...platformResults);
       } catch (error) {
-        spinner.fail(chalk.red(`Failed to install rules for ${pName}.`));
+        spinner.fail(pc.red(`Failed to install rules for ${pName}.`));
         if (error instanceof Error) {
-          console.error(chalk.red(`Error: ${error.message}`));
+          console.error(pc.red(`Error: ${error.message}`));
         }
       }
     }
@@ -165,7 +168,7 @@ program
     if (results.length > 0) {
       if (!fs.existsSync(path.join(process.cwd(), ".geraph/graph.json"))) {
         console.log(
-          chalk.cyan(
+          pc.cyan(
             "Next Step: Run 'geraph scan' to build the graphical knowledge base.",
           ),
         );
@@ -184,10 +187,13 @@ program
     // If no platforms provided, uninstall all
     const targets = platforms.length > 0 ? platforms : [undefined];
 
+    const ora = (await import("ora")).default;
+    const { uninstallGeraph, PLATFORMS } = await import("./core/install.js");
+
     for (const pName of targets) {
       if (pName && !PLATFORMS[pName]) {
         console.log(
-          chalk.yellow(
+          pc.yellow(
             `\n\u26A0\u3000Platform '${pName}' is not recognized. Skipping.\n`,
           ),
         );
@@ -195,7 +201,7 @@ program
       }
 
       const spinner = ora({
-        text: chalk.gray(
+        text: pc.gray(
           pName
             ? `Removing rules for ${pName}...`
             : "Removing all Geraph rules...",
@@ -209,30 +215,30 @@ program
         results.push(...platformResults);
         if (platformResults.length > 0) {
           spinner.succeed(
-            chalk.green(
+            pc.green(
               pName
                 ? `Successfully removed rules for ${pName}.`
                 : "Successfully removed all Geraph rules.",
             ),
           );
           console.log();
-          platformResults.forEach((r) => console.log(chalk.dim(`  - ${r}`)));
+          platformResults.forEach((r) => console.log(pc.dim(`  - ${r}`)));
           console.log();
         } else {
           spinner.stop();
         }
       } catch (error) {
         spinner.fail(
-          chalk.red(`Failed to remove rules for ${pName || "all"}.`),
+          pc.red(`Failed to remove rules for ${pName || "all"}.`),
         );
         if (error instanceof Error) {
-          console.error(chalk.red(`Error: ${error.message}`));
+          console.error(pc.red(`Error: ${error.message}`));
         }
       }
     }
 
     if (results.length === 0) {
-      console.log(chalk.yellow("\nNo Geraph rules found to remove.\n"));
+      console.log(pc.yellow("\nNo Geraph rules found to remove.\n"));
     }
   });
 
@@ -246,8 +252,9 @@ program
   .option("-p, --page <number>", "Page number for pagination", "1")
   .option("-l, --limit <number>", "Number of results per page", "20")
   .action(async (term, options) => {
+    const ora = (await import("ora")).default;
     const spinner = ora({
-      text: chalk.gray(`Searching graph for: ${term}...`),
+      text: pc.gray(`Searching graph for: ${term}...`),
       color: "blue",
       spinner: "dots",
     }).start();
@@ -263,14 +270,14 @@ program
       spinner.stop();
       if (results.data.length === 0) {
         console.error(
-          chalk.yellow(
+          pc.yellow(
             `No nodes found matching '${term}' on page ${options.page}`,
           ),
         );
       } else {
         console.log(JSON.stringify(results, null, 2));
         console.error(
-          chalk.gray(
+          pc.gray(
             `\nFound ${results.meta.total} nodes across ${results.meta.totalPages} pages. Displaying page ${results.meta.page}.`,
           ),
         );
@@ -278,7 +285,7 @@ program
     } catch (error) {
       spinner.stop();
       console.error(
-        chalk.red("❌ Search failed:"),
+        pc.red("❌ Search failed:"),
         error instanceof Error ? error.message : String(error),
       );
       process.exit(1);
@@ -297,8 +304,9 @@ program
     "Filter results by source file path (e.g., 'auth.ts')",
   )
   .action(async (symbol, options) => {
+    const ora = (await import("ora")).default;
     const spinner = ora({
-      text: chalk.gray(`Querying node: ${symbol}...`),
+      text: pc.gray(`Querying node: ${symbol}...`),
       color: "blue",
       spinner: "dots",
     }).start();
@@ -314,7 +322,7 @@ program
       console.log(JSON.stringify(result, null, 2));
     } catch (error) {
       spinner.fail(
-        chalk.red(
+        pc.red(
           `Query failed: ${error instanceof Error ? error.message : String(error)}`,
         ),
       );
@@ -336,8 +344,9 @@ program
   .option("-p, --page <number>", "Page number for pagination", "1")
   .option("-l, --limit <number>", "Number of edges per page", "20")
   .action(async (symbol, options) => {
+    const ora = (await import("ora")).default;
     const spinner = ora({
-      text: chalk.gray(`Querying neighbors for: ${symbol}...`),
+      text: pc.gray(`Querying neighbors for: ${symbol}...`),
       color: "blue",
       spinner: "dots",
     }).start();
@@ -355,7 +364,7 @@ program
       console.log(JSON.stringify(result, null, 2));
     } catch (error) {
       spinner.fail(
-        chalk.red(
+        pc.red(
           `Query failed: ${error instanceof Error ? error.message : String(error)}`,
         ),
       );
@@ -370,8 +379,9 @@ program
   )
   .option("-m, --max-hops <number>", "Maximum hops to consider", "8")
   .action(async (source, target, options) => {
+    const ora = (await import("ora")).default;
     const spinner = ora({
-      text: chalk.gray(`Finding shortest path...`),
+      text: pc.gray(`Finding shortest path...`),
       color: "blue",
       spinner: "dots",
     }).start();
@@ -383,7 +393,7 @@ program
       console.log(result);
     } catch (error) {
       spinner.fail(
-        chalk.red(
+        pc.red(
           `Path failed: ${error instanceof Error ? error.message : String(error)}`,
         ),
       );
@@ -399,8 +409,9 @@ program
   .option("-p, --page <number>", "Page number for pagination", "1")
   .option("-l, --limit <number>", "Number of results per page", "10")
   .action(async (options) => {
+    const ora = (await import("ora")).default;
     const spinner = ora({
-      text: chalk.gray(`Fetching core nodes...`),
+      text: pc.gray(`Fetching core nodes...`),
       color: "blue",
       spinner: "dots",
     }).start();
@@ -415,7 +426,7 @@ program
       console.log(result);
     } catch (error) {
       spinner.fail(
-        chalk.red(
+        pc.red(
           `Failed to fetch god nodes: ${error instanceof Error ? error.message : String(error)}`,
         ),
       );
@@ -429,8 +440,9 @@ program
   .option("-p, --page <number>", "Page number for pagination", "1")
   .option("-l, --limit <number>", "Number of results per page", "20")
   .action(async (id, options) => {
+    const ora = (await import("ora")).default;
     const spinner = ora({
-      text: chalk.gray(`Fetching nodes in community ${id}...`),
+      text: pc.gray(`Fetching nodes in community ${id}...`),
       color: "blue",
       spinner: "dots",
     }).start();
@@ -446,7 +458,7 @@ program
       console.log(result);
     } catch (error) {
       spinner.fail(
-        chalk.red(
+        pc.red(
           `Failed to fetch community: ${error instanceof Error ? error.message : String(error)}`,
         ),
       );
@@ -462,8 +474,9 @@ program
   .option("-p, --page <number>", "Page number for pagination", "1")
   .option("-l, --limit <number>", "Number of results per page", "20")
   .action(async (options) => {
+    const ora = (await import("ora")).default;
     const spinner = ora({
-      text: chalk.gray(`Querying surprising connections...`),
+      text: pc.gray(`Querying surprising connections...`),
       color: "blue",
       spinner: "dots",
     }).start();
@@ -478,7 +491,7 @@ program
       console.log(result);
     } catch (error) {
       spinner.fail(
-        chalk.red(
+        pc.red(
           `Failed to fetch surprises: ${error instanceof Error ? error.message : String(error)}`,
         ),
       );
@@ -495,8 +508,9 @@ program
   .option("-d, --depth <number>", "Traversal depth limit", "3")
   .option("-b, --budget <number>", "Estimated output token limit", "2000")
   .action(async (symbolOrQuestion, options) => {
+    const ora = (await import("ora")).default;
     const spinner = ora({
-      text: chalk.gray(`Traversing AST graph from ${symbolOrQuestion}...`),
+      text: pc.gray(`Traversing AST graph from ${symbolOrQuestion}...`),
       color: "blue",
       spinner: "dots",
     }).start();
@@ -513,7 +527,7 @@ program
       console.log(result);
     } catch (error) {
       spinner.fail(
-        chalk.red(
+        pc.red(
           `Query failed: ${error instanceof Error ? error.message : String(error)}`,
         ),
       );
@@ -527,8 +541,9 @@ program
     "Return summary statistics of the graph: node count, edge count, community count, and extraction confidence percentage breakdown",
   )
   .action(async () => {
+    const ora = (await import("ora")).default;
     const spinner = ora({
-      text: chalk.gray(`Querying graph statistics...`),
+      text: pc.gray(`Querying graph statistics...`),
       color: "blue",
       spinner: "dots",
     }).start();
@@ -539,7 +554,7 @@ program
       console.log(result);
     } catch (error) {
       spinner.fail(
-        chalk.red(
+        pc.red(
           `Failed to fetch stats: ${error instanceof Error ? error.message : String(error)}`,
         ),
       );

@@ -519,7 +519,7 @@ export function parseJava(
         }
 
         if (objectName && JAVA_STDLIB_PACKAGES.has(objectName)) continue;
-        if (isLocalDeclaration(node, objectName || methodName)) continue;
+        if (isLocalDeclaration(node, objectName ? `${objectName}.${methodName}` : methodName)) continue;
 
         const callerScope = getEnclosingScopePath(node.parent);
         const callerId = callerScope ? `${filePath}::${callerScope}` : filePath;
@@ -540,7 +540,7 @@ export function parseJava(
           if (localMatches.length === 1 && localMatches[0]) {
             targets.push({
               id: localMatches[0],
-              confidence: "EXTRACTED"
+              confidence: "INFERRED"
             });
           } else if (localMatches.length > 1) {
             for (const matchId of localMatches) {

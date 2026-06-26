@@ -634,7 +634,7 @@ export function parsePython(
         if (objectName && !resolvedObject && PYTHON_STDLIB_MODULES.has(objectName)) {
           continue;
         }
-        if (isLocalDeclaration(node, objectName || methodName)) continue;
+        if (isLocalDeclaration(node, objectName ? `${objectName}.${methodName}` : methodName)) continue;
 
         const importSource = importMap.get(objectName);
         if (importSource) {
@@ -682,7 +682,7 @@ export function parsePython(
             if (localMatches.length === 1 && localMatches[0]) {
               targets.push({
                 id: localMatches[0],
-                confidence: "EXTRACTED"
+                confidence: "INFERRED"
               });
             } else if (localMatches.length > 1) {
               for (const matchId of localMatches) {

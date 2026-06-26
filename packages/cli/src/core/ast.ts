@@ -3,7 +3,7 @@ import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
 import { Worker } from "worker_threads";
-import chalk from "chalk";
+import pc from "picocolors";
 import { Ora } from "ora";
 import { MultiDirectedGraph } from "graphology";
 import { NodeData, EdgeData } from "./graph.js";
@@ -106,17 +106,17 @@ export async function extractAst(
   if (cachedCount === files.length) {
     spinner.stop();
     console.log(
-      chalk.green(`⚡ Fully cached! No files needed re-parsing.`),
+      pc.green(`⚡ Fully cached! No files needed re-parsing.`),
     );
     spinner.start();
   } else {
-    spinner.text = chalk.gray(
+    spinner.text = pc.gray(
       `Parsing AST for ${files.length - cachedCount} files (${cachedCount} cached)...`,
     );
   }
 
   if (queue.length > 0) {
-    const numWorkers = Math.min(availableParallelism(), queue.length);
+    const numWorkers = Math.min(availableParallelism(), queue.length, 4);
     const workerPath = path.join(
       path.dirname(fileURLToPath(import.meta.url)),
       "core",
@@ -140,7 +140,7 @@ export async function extractAst(
             const onMessage = (msg: WorkerMessage) => {
               if (msg.error) {
                 console.error(
-                  chalk.yellow(
+                  pc.yellow(
                     `\n\u26A0\u3000Worker error for ${file}: ${msg.error}`,
                   ),
                 );
@@ -157,7 +157,7 @@ export async function extractAst(
                 }
               }
               completedCount++;
-              spinner.text = chalk.gray(
+              spinner.text = pc.gray(
                 `Parsing AST: ${completedCount}/${files.length} files...`,
               );
               worker.off("message", onMessage);
@@ -167,7 +167,7 @@ export async function extractAst(
 
             const onError = (err: Error) => {
               console.error(
-                chalk.red(`Worker error on ${file}: ${err.message}`),
+                pc.red(`Worker error on ${file}: ${err.message}`),
               );
               completedCount++;
               worker.off("message", onMessage);
