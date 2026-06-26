@@ -44,4 +44,4 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           cd packages/cli
-          npx clean-publish --provenance
+          npx clean-publish -- --provenance
