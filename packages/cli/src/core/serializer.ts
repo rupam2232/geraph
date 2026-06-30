@@ -651,12 +651,22 @@ export function exportGraphHtml(
   <div id="container"></div>
 
 <script type="text/javascript">
-  const RAW_NODES = ${JSON.stringify(RAW_NODES)};
-  const RAW_EDGES = ${JSON.stringify(RAW_EDGES)};
-  const RAW_COMMUNITIES = ${JSON.stringify(RAW_COMMUNITIES)};
+  const RAW_NODES = ${JSON.stringify(RAW_NODES).replace(/</g, '\\u003c')};
+  const RAW_EDGES = ${JSON.stringify(RAW_EDGES).replace(/</g, '\\u003c')};
+  const RAW_COMMUNITIES = ${JSON.stringify(RAW_COMMUNITIES).replace(/</g, '\\u003c')};
 
   function escapeHtmlAttr(str) {
     return (str || '').replace(/"/g, '&quot;');
+  }
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
   }
 
   const hiddenNodeTypes = new Set();
@@ -752,15 +762,15 @@ export function exportGraphHtml(
     if (!neighbor) return '';
     return \`<div class="neighbor-item" data-neighbor-id="\${escapeHtmlAttr(neighborId)}">
       <div class="neighbor-meta">
-        <span class="neighbor-relation">\${edge.relation || 'calls'}</span>
-        <span class="neighbor-confidence">\${edge.confidence || 'EXTRACTED'}</span>
+        <span class="neighbor-relation">\${escapeHtml(edge.relation || 'calls')}</span>
+        <span class="neighbor-confidence">\${escapeHtml(edge.confidence || 'EXTRACTED')}</span>
       </div>
       <div class="neighbor-main">
         <div class="neighbor-main-left">
           <div class="neighbor-dot" style="background: \${neighbor.color.background};"></div>
-          <span class="neighbor-name">\${neighbor.label || neighborId}</span>
+          <span class="neighbor-name">\${escapeHtml(neighbor.label || neighborId)}</span>
         </div>
-        <span class="neighbor-type">\${neighbor.node_type}</span>
+        <span class="neighbor-type">\${escapeHtml(neighbor.node_type)}</span>
       </div>
     </div>\`;
   }
@@ -871,31 +881,31 @@ export function exportGraphHtml(
     const nodeData = RAW_NODES.find(n => n.id === nodeId);
     if (!nodeData) return;
 
-    let html = \`<div class="field"><b>ID</b> \${nodeData.id}</div>\`;
-    html += \`<div class="field"><b>Type</b> \${nodeData.node_type}</div>\`;
-    html += \`<div class="field"><b>Name</b> \${nodeData.label}</div>\`;
-    html += \`<div class="field"><b>Links</b> \${nodeData.degree}</div>\`;
+    let html = \`<div class="field"><b>ID</b> \${escapeHtml(nodeData.id)}</div>\`;
+    html += \`\n<div class="field"><b>Type</b> \${escapeHtml(nodeData.node_type)}</div>\`;
+    html += \`\n<div class="field"><b>Name</b> \${escapeHtml(nodeData.label)}</div>\`;
+    html += \`\n<div class="field"><b>Links</b> \${nodeData.degree}</div>\`;
 
     if (nodeData.community !== undefined && nodeData.community !== 'none') {
-      html += \`<div class="field"><b>Community</b> Community \${nodeData.community}</div>\`;
+      html += \`\n<div class="field"><b>Community</b> Community \${escapeHtml(nodeData.community)}</div>\`;
     }
 
     if (nodeData.source_file && !nodeData.source_file.startsWith('unresolved_') && nodeData.source_file !== 'import') {
-      html += \`<div class="field"><b>Source</b> \${nodeData.source_file}</div>\`;
+      html += \`\n<div class="field"><b>Source</b> \${escapeHtml(nodeData.source_file)}</div>\`;
     }
 
     if (nodeData.startLine) {
       const lineText = nodeData.startLine === nodeData.endLine ? nodeData.startLine : \`\${nodeData.startLine} - \${nodeData.endLine}\`;
-      html += \`<div class="field"><b>Lines</b> \${lineText}</div>\`;
+      html += \`\n<div class="field"><b>Lines</b> \${lineText}</div>\`;
     }
 
     if (nodeData.message) {
-      html += \`<div class="field"><b>Message</b> \${nodeData.message.replace(/\\n/g, '<br>')}</div>\`;
+      html += \`\n<div class="field"><b>Message</b> \${escapeHtml(nodeData.message).replace(/\\n/g, '<br>')}</div>\`;
     }
 
     if (nodeData.unresolved) {
-      html += \`<div class="field"><b>Status</b> <span style="color:#EDC948">Unresolved</span></div>\`;
-      if (nodeData.doc) html += \`<div class="field"><b>Reason</b> \${nodeData.doc}</div>\`;
+      html += \`\n<div class="field"><b>Status</b> <span style="color:#EDC948">Unresolved</span></div>\`;
+      if (nodeData.doc) html += \`\n<div class="field"><b>Reason</b> \${escapeHtml(nodeData.doc)}</div>\`;
     }
 
     const incomingEdges = RAW_EDGES.filter(e => {
@@ -994,8 +1004,8 @@ export function exportGraphHtml(
     suggestionsBox.innerHTML = currentSuggestions.map((n, idx) => {
       const activeClass = idx === 0 ? 'active' : '';
       return \`<div class="suggestion-item \${activeClass}" data-id="\${escapeHtmlAttr(n.id)}" data-idx="\${idx}">
-        <span class="suggestion-name">\${n.name || n.id}</span>
-        <span class="suggestion-type">\${n.node_type}</span>
+        <span class="suggestion-name">\${escapeHtml(n.name || n.id)}</span>
+        <span class="suggestion-type">\${escapeHtml(n.node_type)}</span>
       </div>\`;
     }).join('');
     

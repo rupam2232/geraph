@@ -8,7 +8,7 @@ export const program = new Command();
 program
   .name("geraph")
   .description(pc.blue("Geraph: Structural memory for AI agents"))
-  .version("1.2.0", "-v, --version", "output the current version");
+  .version("1.2.1", "-v, --version", "output the current version");
 
 program
   .command("scan")

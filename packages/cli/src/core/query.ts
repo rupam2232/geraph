@@ -243,6 +243,62 @@ function resolveTargetNodeId(
   }
 
   if (!targetNodeId) {
+    const partialMatches: string[] = [];
+
+    // Try case-sensitive partial matching first
+    graph.forEachNode((nodeId, attr) => {
+      if (targetType && attr.type !== targetType) return;
+      if (targetSource) {
+        const normSource = normalizeId(targetSource);
+        if (!attr.file.toLowerCase().endsWith(normSource.toLowerCase())) return;
+      }
+
+      const attrName = attr.name || "";
+      if (nodeId.includes(symbol) || attrName.includes(symbol)) {
+        partialMatches.push(nodeId);
+      }
+    });
+
+    // Fall back to case-insensitive partial matching if no matches found
+    if (partialMatches.length === 0) {
+      const lowerSymbol = symbol.toLowerCase();
+      graph.forEachNode((nodeId, attr) => {
+        if (targetType && attr.type !== targetType) return;
+        if (targetSource) {
+          const normSource = normalizeId(targetSource);
+          if (!attr.file.toLowerCase().endsWith(normSource.toLowerCase())) return;
+        }
+        
+        const nodeIdLower = nodeId.toLowerCase();
+        const attrNameLower = (attr.name || "").toLowerCase();
+        
+        if (
+          nodeIdLower.includes(lowerSymbol) ||
+          attrNameLower.includes(lowerSymbol)
+        ) {
+          partialMatches.push(nodeId);
+        }
+      });
+    }
+
+    if (partialMatches.length === 1) {
+      targetNodeId = partialMatches[0]!;
+    } else if (partialMatches.length > 1) {
+      const lowerSymbol = symbol.toLowerCase();
+      const commitMatch = partialMatches.find(id => {
+        const parts = id.split("::");
+        return parts[0] === "commit" && parts[1]?.toLowerCase().startsWith(lowerSymbol);
+      });
+      if (commitMatch) {
+        targetNodeId = commitMatch;
+      } else {
+        partialMatches.sort((a, b) => graph.degree(b) - graph.degree(a));
+        targetNodeId = partialMatches[0]!;
+      }
+    }
+  }
+
+  if (!targetNodeId) {
     const typeMsg = targetType ? ` of type '${targetType}'` : "";
     const sourceMsg = targetSource ? ` in source '${targetSource}'` : "";
     throw new Error(
